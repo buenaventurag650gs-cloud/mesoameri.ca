@@ -13,7 +13,7 @@ crons = ["0 13 * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "mesoamerica-db"
-database_id = "REPLACE_WITH_D1_ID_AFTER_CREATE"
+database_id = "f81c5c39-c605-4ea2-be52-bd7322fd76eb"
 
 # Variables públicas (cambialas desde el dashboard o con wrangler secret)
 [vars]
