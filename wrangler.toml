@@ -1,0 +1,27 @@
+name = "mesoamerica"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cron: todos los días a las 13:00 UTC = 7:00am hora Costa Rica
+[triggers]
+crons = ["0 13 * * *"]
+
+# D1 — base de datos SQLite serverless
+# Correr: wrangler d1 create mesoamerica-db
+# Y pegar el id que devuelve.
+[[d1_databases]]
+binding = "DB"
+database_name = "mesoamerica-db"
+database_id = "REPLACE_WITH_D1_ID_AFTER_CREATE"
+
+# Variables públicas (cambialas desde el dashboard o con wrangler secret)
+[vars]
+USER_AGENT = "mesoamerica-bot/0.1 (+contact: set CONTACT_EMAIL secret)"
+# Categorías a incluir en el digest, separadas por coma
+RELEVANT_CATEGORIES = "urbanismo,ambiental,residuos,agua-saneamiento,obra-publica"
+
+# Secrets (configurar aparte con: wrangler secret put NOMBRE)
+# - CONTACT_EMAIL        → email para User-Agent (requerido por algunos portales)
+# - DIGEST_RECIPIENTS    → lista de emails para enviar digest (opcional)
+# - ADMIN_TOKEN          → token para endpoints /admin/*

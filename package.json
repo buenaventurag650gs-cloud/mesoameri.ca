@@ -1,0 +1,20 @@
+{
+  "name": "mesoamerica",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Digest de licitaciones de Mesoamérica (SICOP, UNGM, BCIE, etc.)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute mesoamerica-db --file=./schema.sql",
+    "db:init:remote": "wrangler d1 execute mesoamerica-db --remote --file=./schema.sql",
+    "db:query": "wrangler d1 execute mesoamerica-db --remote --command",
+    "seed": "wrangler d1 execute mesoamerica-db --file=./samples/seed.sql",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.4.0",
+    "wrangler": "^3.90.0"
+  }
+}

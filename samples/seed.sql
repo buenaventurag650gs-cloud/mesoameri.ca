@@ -1,0 +1,67 @@
+-- Seed con datos de muestra para ver el digest apenas desplegás.
+-- Correr DESPUÉS de db:init:
+--   wrangler d1 execute mesoamerica-db --remote --file=./samples/seed.sql
+
+INSERT OR REPLACE INTO licitaciones VALUES
+('sicop_cr:2026LD-000096-0004200001', 'sicop_cr', '2026LD-000096-0004200001', 'CR',
+ 'Municipalidad de Buenos Aires',
+ 'Estudios ambientales y tramitología del terreno del Cementerio Municipal II',
+ 'Licitación reducida para los estudios ambientales y el trámite del terreno destinado al cementerio municipal.',
+ 'vigente', '2026-11-03', '2026-11-10T08:00:00',
+ 'https://www.sicop.go.cr/moduloBid/common/review/EpExamRcvSuplDetail.jsp?cartelNo=2026LD-000096-0004200001',
+ '["ambiental"]', '["ambiental","estudio ambiental"]', '{}',
+ '2026-11-14T00:00:00', '2026-11-14T13:00:00'),
+
+('sicop_cr:2026LD-000353-0000900001', 'sicop_cr', '2026LD-000353-0000900001', 'CR',
+ 'Universidad de Costa Rica (UCR)',
+ 'Plan Maestro de Ordenamiento Territorial de la Estación Experimental Fabio Baudrit Moreno',
+ 'Servicios profesionales para elaborar el plan maestro de ordenamiento territorial de la estación experimental (EEAFBM), en Alajuela.',
+ 'vigente', '2026-11-03', '2026-11-10T10:00:00',
+ 'https://www.sicop.go.cr/moduloBid/common/review/EpExamRcvSuplDetail.jsp?cartelNo=2026LD-000353-0000900001',
+ '["urbanismo","consultoria"]', '["ordenamiento territorial","plan maestro","consultoria"]', '{}',
+ '2026-11-14T00:00:00', '2026-11-14T13:00:00'),
+
+('sicop_cr:2026LD-000016-0003000001', 'sicop_cr', '2026LD-000016-0003000001', 'CR',
+ 'Municipalidad de Flores',
+ 'Actualización del estudio hidrológico de la sección de la Quebrada Flores',
+ 'Licitación reducida para actualizar el estudio hidrológico de un tramo de la Quebrada Flores.',
+ 'vigente', '2026-11-03', '2026-11-10T10:01:00',
+ 'https://www.sicop.go.cr/moduloBid/common/review/EpExamRcvSuplDetail.jsp?cartelNo=2026LD-000016-0003000001',
+ '["ambiental"]', '["estudio hidrologico"]', '{}',
+ '2026-11-14T00:00:00', '2026-11-14T13:00:00'),
+
+('sicop_cr:2026LY-000002-0021800611', 'sicop_cr', '2026LY-000002-0021800611', 'CR',
+ 'Municipalidad de Garabito',
+ 'Elaboración de los planes reguladores del cantón de Garabito (costero, rural y de ciudad litoral)',
+ 'Licitación mayor para los tres planes reguladores del cantón.',
+ 'vigente', '2026-10-23', '2026-11-24T09:00:00',
+ 'https://www.sicop.go.cr/moduloBid/common/review/EpExamRcvSuplDetail.jsp?cartelNo=2026LY-000002-0021800611',
+ '["urbanismo"]', '["plan regulador"]', '{}',
+ '2026-11-14T00:00:00', '2026-11-14T13:00:00'),
+
+('ungm:UNDP-SLV-00593', 'ungm', 'UNDP-SLV-00593', 'SV',
+ 'PNUD El Salvador',
+ 'Caracterización de los residuos sólidos municipales del AMSS',
+ 'Línea base y diagnóstico del sistema de gestión de residuos del Área Metropolitana de San Salvador.',
+ 'vigente', '2026-10-14', '2026-11-11T17:00:00',
+ 'https://www.ungm.org/Public/Notice/UNDP-SLV-00593',
+ '["residuos"]', '["residuos solidos","gestion de residuos"]', '{}',
+ '2026-11-14T00:00:00', '2026-11-14T13:00:00'),
+
+('ungm:LPI-044-2026', 'ungm', 'LPI-044-2026', 'SV',
+ 'BCIE - Adquisiciones Institucionales',
+ 'Programa integral de saneamiento y recuperación de los lagos de Ilopango y Coatepeque',
+ 'Firma consultora: diagnóstico ambiental, calidad del agua, estudio de impacto ambiental, riesgos y programa de manejo de las cuencas. Recursos del BCIE.',
+ 'vigente', '2026-09-09', '2026-11-11T23:59:00',
+ 'https://www.bcie.org/adquisiciones-en-proyectos/avisos-de-adquisicion/LPI-044-2026',
+ '["ambiental","agua-saneamiento"]', '["ambiental","impacto ambiental","saneamiento"]', '{}',
+ '2026-11-14T00:00:00', '2026-11-14T13:00:00'),
+
+('ungm:UNDP-SLV-00587', 'ungm', 'UNDP-SLV-00587', 'SV',
+ 'PNUD El Salvador',
+ 'Diagnóstico nacional de la gestión del recurso hídrico',
+ 'Diagnóstico de conflictos y espacios de diálogo sobre el agua en Chalatenango Norte, en el Trifinio.',
+ 'vigente', '2026-10-22', '2026-11-18T02:59:00',
+ 'https://www.ungm.org/Public/Notice/UNDP-SLV-00587',
+ '["ambiental"]', '["recurso hidrico"]', '{}',
+ '2026-11-14T00:00:00', '2026-11-14T13:00:00');
