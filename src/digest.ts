@@ -486,11 +486,15 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     .map((c) => `<a href="/?country=${esc(c)}">${esc(COUNTRIES[c] ?? c)}</a>`)
     .join("\n         ");
 
+  // El CSV y el JSON respetan el país actual (si la vista está filtrada).
+  const curCountry = countriesWithData.length === 1 ? countriesWithData[0] : "";
+  const dlQ = curCountry ? `?country=${esc(curCountry)}` : "";
   const nav = opts.showNav
     ? `<nav class="nav">
          <a href="/">Todas</a>
          ${countryLinks}
-         <a href="/api/vigentes.json">JSON</a>
+         <a href="/api/vigentes.csv${dlQ}">CSV</a>
+         <a href="/api/vigentes.json${dlQ}">JSON</a>
        </nav>`
     : "";
 

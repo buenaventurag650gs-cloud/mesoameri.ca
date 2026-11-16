@@ -43,6 +43,22 @@ export default {
       return jsonResponse(lics);
     }
 
+    // --- Descarga CSV (para pasar a Excel/Sheets) ---
+    if (url.pathname === "/api/vigentes.csv") {
+      const country = url.searchParams.get("country") ?? undefined;
+      const lics = await storage.vigentes(country);
+      const csv = toCsv(lics);
+      const fname = `mesoamerica-${country ? country + "-" : ""}${new Date()
+        .toISOString()
+        .slice(0, 10)}.csv`;
+      return new Response("﻿" + csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${fname}"`,
+        },
+      });
+    }
+
     if (url.pathname === "/api/runs.json") {
       const { results } = await env.DB
         .prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT 50")
@@ -318,4 +334,39 @@ function jsonResponse(data: unknown): Response {
   return new Response(JSON.stringify(data, null, 2), {
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
+}
+
+// CSV listo para abrir en Excel/Sheets. Separador por coma, texto entre
+// comillas dobles, saltos de línea y comillas internas escapados.
+function toCsv(lics: Licitacion[]): string {
+  const headers = [
+    "Fuente", "País", "Institución", "Título", "Categorías",
+    "Monto CRC", "Monto USD", "Tipo", "Clasificación",
+    "Publicación", "Cierre", "Nº procedimiento", "URL",
+  ];
+  const q = (v: unknown): string => {
+    const s = v == null ? "" : String(v);
+    return '"' + s.replace(/"/g, '""').replace(/\r?\n/g, " ") + '"';
+  };
+  const rows = lics.map((l) => {
+    const raw = l.raw as Record<string, unknown> | null;
+    const e = (raw && (raw as { _enriched?: Record<string, unknown> })._enriched) ?? null;
+    const procNo = raw && typeof raw.instCartelNo === "string" ? raw.instCartelNo : "";
+    return [
+      l.source,
+      l.country,
+      l.entity,
+      l.title,
+      l.categories.join("; "),
+      (e && typeof e.montoCRC === "number") ? e.montoCRC : "",
+      (e && typeof e.montoUSD === "number") ? e.montoUSD : "",
+      (e && typeof e.tipoProceso === "string") ? e.tipoProceso : "",
+      (e && typeof e.clasificacion === "string") ? e.clasificacion : "",
+      (l.publish_date ?? "").slice(0, 10),
+      (l.close_date ?? "").slice(0, 16).replace("T", " "),
+      procNo,
+      l.source_url,
+    ].map(q).join(",");
+  });
+  return [headers.map(q).join(","), ...rows].join("\r\n");
 }
