@@ -101,6 +101,34 @@ export class Storage {
     return results.map(rowToLicitacion);
   }
 
+  // Concursos vigentes de una fuente que todavía NO tienen detalle enriquecido.
+  // Los más próximos a cerrar primero (son los más urgentes de completar).
+  async pendingEnrichment(source: string, limit: number): Promise<Licitacion[]> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT * FROM licitaciones
+          WHERE source = ? AND status = 'vigente'
+            AND (raw IS NULL OR raw NOT LIKE '%"_enriched"%')
+          ORDER BY close_date ASC
+          LIMIT ?`
+      )
+      .bind(source, limit)
+      .all<D1Row>();
+    return results.map(rowToLicitacion);
+  }
+
+  // Guarda el raw enriquecido (y completa close_date si venía nulo).
+  async updateRaw(key: string, raw: unknown, closeDate: string | null): Promise<void> {
+    await this.db
+      .prepare(
+        `UPDATE licitaciones
+            SET raw = ?, close_date = COALESCE(close_date, ?), last_seen_at = ?
+          WHERE dedupe_key = ?`
+      )
+      .bind(JSON.stringify(raw), closeDate, new Date().toISOString(), key)
+      .run();
+  }
+
   // De las claves dadas, cuáles ya tienen detalle enriquecido guardado
   // (raw contiene "_enriched"). Sirve para no re-enriquecer en cada corrida.
   async enrichedKeys(keys: string[]): Promise<Set<string>> {

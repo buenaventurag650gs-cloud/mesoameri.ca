@@ -3,9 +3,11 @@ main = "src/index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Cron: todos los días a las 13:00 UTC = 7:00am hora Costa Rica
+# Crons:
+#  - 13:00 UTC (7:00am CR): buscar concursos, clasificar, guardar y enviar correo
+#  - cada 2 horas: completar el detalle (presupuesto, tipo, etc.) de los pendientes
 [triggers]
-crons = ["0 13 * * *"]
+crons = ["0 13 * * *", "0 */2 * * *"]
 
 # D1 — base de datos SQLite serverless
 # Correr: wrangler d1 create mesoamerica-db

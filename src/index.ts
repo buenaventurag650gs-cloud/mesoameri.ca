@@ -14,6 +14,7 @@ import { classify, filterRelevant } from "./classifier";
 import { renderDigest } from "./digest";
 import { renderDigestEmail, sendEmail } from "./email";
 import { FETCHERS } from "./fetchers";
+import { enrichSicopCr } from "./fetchers/sicop_cr";
 import { dedupeKey, type Licitacion } from "./schema";
 import { Storage } from "./storage";
 
@@ -69,6 +70,16 @@ export default {
       return jsonResponse(summary);
     }
 
+    // --- Admin: completar detalle pendiente (prueba manual) ---
+    if (url.pathname === "/admin/enrich" && request.method === "POST") {
+      if (!env.ADMIN_TOKEN || request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const limit = Number(url.searchParams.get("limit") ?? "40") || 40;
+      const result = await enrichBacklog(env, limit);
+      return jsonResponse(result);
+    }
+
     // --- Admin: enviar el correo del digest (prueba manual) ---
     if (url.pathname === "/admin/email" && request.method === "POST") {
       if (!env.ADMIN_TOKEN || request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
@@ -104,16 +115,55 @@ export default {
     return new Response("Not found", { status: 404 });
   },
 
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(
-      runPipeline(env)
-        .then((s) => console.log("pipeline:", s))
-        .then(() => sendDailyDigest(env))
-        .then((r) => console.log("email:", r))
-        .catch((e) => console.error("scheduled error:", (e as Error).message))
-    );
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Dos crons:
+    //  - diario 13:00 UTC (7am CR): buscar + clasificar + guardar + enviar correo
+    //  - cada 2 horas: completar el detalle pendiente (sin búsquedas compitiendo)
+    const cron = (event as { cron?: string }).cron ?? "";
+    if (cron === "0 13 * * *") {
+      ctx.waitUntil(
+        runPipeline(env)
+          .then((s) => console.log("pipeline:", s))
+          .then(() => sendDailyDigest(env))
+          .then((r) => console.log("email:", r))
+          .catch((e) => console.error("scheduled error:", (e as Error).message))
+      );
+    } else {
+      ctx.waitUntil(
+        enrichBacklog(env)
+          .then((r) => console.log("enrich backlog:", r))
+          .catch((e) => console.error("enrich error:", (e as Error).message))
+      );
+    }
   },
 };
+
+// ----- completar detalle pendiente (cron cada 2h y /admin/enrich) -----
+// Corre SIN búsquedas, así todo el presupuesto de llamadas va al detalle.
+
+async function enrichBacklog(env: Env, limit = 40): Promise<Record<string, unknown>> {
+  const storage = new Storage(env.DB);
+  const pending = await storage.pendingEnrichment("sicop_cr", limit);
+  if (pending.length === 0) return { pendientes: 0, enriquecidos: 0, guardados: 0 };
+
+  const stats = await enrichSicopCr(pending, limit);
+
+  let guardados = 0;
+  for (const lic of pending) {
+    const raw = lic.raw as Record<string, unknown> | null;
+    if (raw && raw._enriched) {
+      try {
+        await storage.updateRaw(dedupeKey(lic), raw, lic.close_date);
+        guardados++;
+      } catch (e) {
+        console.warn(`updateRaw ${dedupeKey(lic)}: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  const restantes = await storage.pendingEnrichment("sicop_cr", 1);
+  return { pendientes: pending.length, ...stats, guardados, quedanPendientes: restantes.length > 0 };
+}
 
 // ----- correo del digest (lo usan scheduled y /admin/email) -----
 

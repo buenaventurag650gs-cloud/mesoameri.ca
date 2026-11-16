@@ -152,11 +152,14 @@ export interface EnrichStats {
 // Enriquece SOLO los concursos relevantes (ya filtrados) con una llamada de
 // detalle cada uno. Muta cada Licitacion: mete el detalle en `raw._enriched`
 // y completa close_date si venía nulo. Devuelve estadísticas para diagnóstico.
-export async function enrichSicopCr(lics: Licitacion[]): Promise<EnrichStats> {
+export async function enrichSicopCr(
+  lics: Licitacion[],
+  maxItems: number = MAX_ENRICH
+): Promise<EnrichStats> {
   const stats: EnrichStats = { attempted: 0, enriched: 0, failed: 0, lastError: null };
   let n = 0;
   for (const lic of lics) {
-    if (n >= MAX_ENRICH) break;
+    if (n >= maxItems) break;
     const cartelNo = lic.source_id;
     const rawRec = (lic.raw ?? {}) as SpCartel;
     const cartelSeq = rawRec.cartelSeq ?? "00";
