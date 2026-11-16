@@ -58,11 +58,24 @@ async function req<T>(url: string, body?: unknown): Promise<T> {
 }
 
 export async function renderCartelDetail(cartelNo: string, cartelSeq: string): Promise<string> {
+  // El cartelNo real de SICOP es numérico. Si no lo es, no hay ficha posible.
+  if (!/^\d+$/.test(cartelNo)) {
+    return errorPage(
+      `El identificador <b>${esc(cartelNo)}</b> no corresponde a un concurso de SICOP, ` +
+        `así que no hay ficha que mostrar. Podés buscarlo por su número de procedimiento en SICOP.`
+    );
+  }
+
   let h: Dict;
   try {
     h = await req<Dict>(HEADER_URL, { cartelNo, cartelSeq });
   } catch (e) {
-    return errorPage(`No se pudo cargar el concurso ${esc(cartelNo)} desde SICOP (${esc((e as Error).message)}).`);
+    const msg = (e as Error).message;
+    return errorPage(
+      msg.includes("400")
+        ? `SICOP no reconoce el concurso <b>${esc(cartelNo)}</b>. Puede que se haya retirado o que el identificador sea antiguo.`
+        : `No se pudo cargar el concurso <b>${esc(cartelNo)}</b> desde SICOP (${esc(msg)}). Probá recargar en un momento.`
+    );
   }
 
   // El resto es complementario: si falla, igual mostramos la ficha.

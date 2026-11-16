@@ -75,7 +75,9 @@ function getProcNo(l: Licitacion): string {
 // Enlace a NUESTRA página de detalle consolidada (solo para SICOP/CR, que
 // tiene cartelSeq). Para otras fuentes usamos el source_url directo.
 function detailHref(l: Licitacion): string {
-  if (l.source === "sicop_cr" && l.source_id) {
+  // Solo enlazamos a nuestra ficha si el id es un cartelNo real de SICOP
+  // (numérico). Si no, el detalle no existe y mandamos al origen.
+  if (l.source === "sicop_cr" && l.source_id && /^\d+$/.test(l.source_id)) {
     const raw = l.raw as Record<string, unknown> | null;
     const seq = raw && typeof raw.cartelSeq === "string" ? raw.cartelSeq : "00";
     return `/cartel?no=${encodeURIComponent(l.source_id)}&seq=${encodeURIComponent(seq)}`;
