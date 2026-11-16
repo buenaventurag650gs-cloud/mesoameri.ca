@@ -52,7 +52,9 @@ interface SpPage {
 export async function fetchSicopCr(env: FetcherEnv): Promise<Licitacion[]> {
   const today = new Date();
   const from = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000);
-  const openTo = new Date(Date.now() + 365 * 86_400_000);
+  // La API rechaza rangos de fecha muy amplios (422). 180 días a futuro cubre
+  // de sobra las aperturas de concursos vigentes y queda dentro del límite.
+  const openTo = new Date(Date.now() + 180 * 86_400_000);
 
   const out: Licitacion[] = [];
   const seen = new Set<string>();
