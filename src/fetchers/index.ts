@@ -4,7 +4,7 @@ import type { Licitacion } from "../schema";
 import type { FetcherEnv } from "./base";
 import { fetchBid } from "./bid";
 import { fetchSicopCr, enrichSicopCr, type EnrichStats } from "./sicop_cr";
-import { fetchUngm } from "./ungm";
+import { fetchUndp } from "./undp";
 
 export interface FetcherDef {
   name: string;
@@ -18,5 +18,5 @@ export interface FetcherDef {
 export const FETCHERS: FetcherDef[] = [
   { name: "sicop_cr", fn: fetchSicopCr, enrich: (lics) => enrichSicopCr(lics) },
   { name: "bid",      fn: fetchBid },
-  { name: "ungm",     fn: fetchUngm },
+  { name: "undp",     fn: fetchUndp },
 ];
