@@ -99,6 +99,42 @@ export async function renderCartelDetail(cartelNo: string, cartelSeq: string): P
   return detailPage(h, lines, staff, resolved);
 }
 
+// Diagnóstico: prueba cada endpoint y reporta qué responde desde el Worker.
+export async function diagnoseCartel(cartelNo: string, cartelSeq: string): Promise<unknown> {
+  const filesUrl =
+    `${FILES_URL}?cartelNo=${encodeURIComponent(cartelNo)}&cartelSeq=${encodeURIComponent(cartelSeq)}&docFileSeqno=`;
+
+  async function probe(label: string, url: string, body?: unknown, withCT = true) {
+    try {
+      const h = headers(!!body);
+      if (!withCT) delete h["Content-Type"];
+      const r = await fetch(url, {
+        method: body ? "POST" : "GET",
+        headers: h,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const t = await r.text();
+      return { label, status: r.status, ct: r.headers.get("content-type"), len: t.length, sample: t.slice(0, 220) };
+    } catch (e) {
+      return { label, error: (e as Error).message };
+    }
+  }
+
+  return {
+    files_get: await probe("files GET", filesUrl),
+    files_get_noheaders: await (async () => {
+      try {
+        const r = await fetch(filesUrl, { headers: { Accept: "application/json" } });
+        const t = await r.text();
+        return { status: r.status, len: t.length, sample: t.slice(0, 220) };
+      } catch (e) {
+        return { error: (e as Error).message };
+      }
+    })(),
+    header_post: await probe("header POST", HEADER_URL, { cartelNo, cartelSeq }),
+  };
+}
+
 // GET que devuelve texto plano (el endpoint de descarga devuelve la URL firmada).
 async function reqText(url: string): Promise<string> {
   const ac = new AbortController();

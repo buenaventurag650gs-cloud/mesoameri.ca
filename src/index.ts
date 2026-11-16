@@ -9,7 +9,7 @@
 //   GET /api/runs.json           → últimas corridas (debugging)
 //   POST /admin/run              → disparar fetch manual (requiere ADMIN_TOKEN)
 
-import { renderCartelDetail } from "./cartel";
+import { diagnoseCartel, renderCartelDetail } from "./cartel";
 import { classify, filterRelevant } from "./classifier";
 import { renderDigest } from "./digest";
 import { renderDigestEmail, sendEmail } from "./email";
@@ -55,6 +55,9 @@ export default {
       const no = url.searchParams.get("no");
       const seq = url.searchParams.get("seq") ?? "00";
       if (!no) return new Response("Falta parámetro 'no'", { status: 400 });
+      if (url.searchParams.get("debug") === "1") {
+        return jsonResponse(await diagnoseCartel(no, seq));
+      }
       const html = await renderCartelDetail(no, seq);
       return new Response(html, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
