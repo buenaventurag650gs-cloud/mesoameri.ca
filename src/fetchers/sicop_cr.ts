@@ -75,9 +75,14 @@ export async function fetchSicopCr(env: FetcherEnv): Promise<Licitacion[]> {
 
     let data: SpPage;
     try {
-      data = await postJson(API_URL, body, env);
+      data = await postJson(API_URL, body);
     } catch (e) {
-      console.warn(`sicop_cr page ${page}: ${(e as Error).message}`);
+      const msg = `sicop_cr page ${page}: ${(e as Error).message}`;
+      console.warn(msg);
+      // Si falla la PRIMERA página, es un fallo real (API nos rechaza, red, etc.):
+      // lo propagamos para que quede visible en runs.json. Si falla una página
+      // posterior, conservamos lo ya traído y cortamos.
+      if (page === 0) throw new Error(msg);
       break;
     }
 
@@ -131,7 +136,7 @@ function mapStatus(s?: string | null): Status {
 }
 
 // ---- POST JSON con timeout ----
-async function postJson<T>(url: string, body: unknown, env: FetcherEnv): Promise<T> {
+async function postJson<T>(url: string, body: unknown): Promise<T> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), REQ_TIMEOUT_MS);
   try {
@@ -141,11 +146,19 @@ async function postJson<T>(url: string, body: unknown, env: FetcherEnv): Promise
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        "User-Agent": env.USER_AGENT,
+        // Cabeceras de navegador: el portal llama su API con estas, y algunas
+        // APIs públicas rechazan requests "sin navegador". Mimetizamos.
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Origin: "https://www.sicop.go.cr",
+        Referer: "https://www.sicop.go.cr/app/module/bid/public/tenders",
       },
       body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) {
+      const snippet = (await r.text().catch(() => "")).slice(0, 180);
+      throw new Error(`HTTP ${r.status}${snippet ? ` — ${snippet}` : ""}`);
+    }
     return (await r.json()) as T;
   } finally {
     clearTimeout(timer);
