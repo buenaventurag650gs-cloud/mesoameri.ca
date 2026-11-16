@@ -7,6 +7,7 @@ const HEADER_URL = `${BASE}/bid/api/v1/public/epCartel/findPublishedById`;
 const PROD_URL = `${BASE}/bid/api/v1/public/epCartelProd/findByEpCartelId`;
 const STAFF_URL = `${BASE}/bid/api/v1/public/epCartelRoleStaff/findByEpCartelId`;
 const FILES_URL = `${BASE}/bid/api/v1/public/epCartelFile/getCartelFilesById`;
+const PAR_URL = `${BASE}/comn/api/v1/public/comnFile/downloadWithPAR`;
 const SICOP_SEARCH = "https://www.sicop.go.cr/app/module/bid/public/tenders";
 const TIMEOUT_MS = 20_000;
 
@@ -19,7 +20,10 @@ interface ProdLine {
 interface Staff { roleCd?: string; staffNm?: string; deptNm?: string; }
 interface CartelFile {
   docNm?: string; clientFileNm?: string; fileSizeMb?: string; fileTypeNm?: string;
+  serverFileNm?: string; fileServerPath?: string;
 }
+// Archivo con su enlace de descarga ya resuelto.
+interface ResolvedFile extends CartelFile { url?: string }
 
 const HEADERS = {
   "Content-Type": "application/json",
@@ -71,7 +75,35 @@ export async function renderCartelDetail(cartelNo: string, cartelSeq: string): P
     ).catch(() => [] as CartelFile[]),
   ]);
 
-  return detailPage(h, lines, staff, files);
+  // Resolver el enlace de descarga de cada documento. SICOP devuelve una URL
+  // firmada temporal (PAR), así que se pide al momento de ver la ficha.
+  const resolved: ResolvedFile[] = await Promise.all(
+    files.map(async (f) => {
+      const path = `${str(f.fileServerPath).replace(/^\//, "")}/${str(f.serverFileNm)}`;
+      if (!str(f.serverFileNm)) return f;
+      try {
+        const url = await reqText(`${PAR_URL}?fileUrl=${encodeURI(path)}`);
+        return { ...f, url: url.trim().startsWith("http") ? url.trim() : undefined };
+      } catch {
+        return f;
+      }
+    })
+  );
+
+  return detailPage(h, lines, staff, resolved);
+}
+
+// GET que devuelve texto plano (el endpoint de descarga devuelve la URL firmada).
+async function reqText(url: string): Promise<string> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  try {
+    const r = await fetch(url, { headers: HEADERS, signal: ac.signal });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.text();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---------- helpers ----------
@@ -125,7 +157,7 @@ function longText(v: unknown, max = 900): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
-function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: CartelFile[]): string {
+function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: ResolvedFile[]): string {
   const title = str(h.cartelNm);
   const inst = str(h.cartelInstNm);
   const procNo = str(h.instCartelNo);
@@ -225,15 +257,23 @@ function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: CartelFil
 
   // 8. Documentos
   const docRows = files
-    .map(
-      (f) =>
-        `<li><b>${esc(str(f.docNm) || str(f.clientFileNm))}</b>` +
-        `<span class="doc-meta">${esc(str(f.clientFileNm))}${f.fileSizeMb ? ` · ${esc(str(f.fileSizeMb))} MB` : ""}</span></li>`
-    )
+    .map((f) => {
+      const name = esc(str(f.docNm) || str(f.clientFileNm));
+      const meta = `${esc(str(f.clientFileNm))}${f.fileSizeMb ? ` · ${esc(str(f.fileSizeMb))} MB` : ""}`;
+      const label = f.url
+        ? `<a href="${esc(f.url)}" target="_blank" rel="noopener" download>${name} ↓</a>`
+        : `<b>${name}</b>`;
+      return `<li>${label}<span class="doc-meta">${meta}</span></li>`;
+    })
     .join("");
+  const anyUrl = files.some((f) => f.url);
   const docsBlock = files.length
-    ? `<ul class="docs">${docRows}</ul>
-       <p class="hint">Los archivos se descargan desde el expediente en SICOP.</p>`
+    ? `<ul class="docs">${docRows}</ul>` +
+      `<p class="hint">${
+        anyUrl
+          ? "Los enlaces de descarga son temporales: si expiran, recargá esta ficha."
+          : "Los archivos se descargan desde el expediente en SICOP."
+      }</p>`
     : "";
 
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -272,6 +312,8 @@ function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: CartelFil
   table.lines tfoot td{border-top:2px solid var(--line);}
   ul.docs{list-style:none;padding:0;margin:0;}
   ul.docs li{padding:9px 0;border-bottom:1px solid var(--line);font-size:14px;}
+  ul.docs a{color:var(--brand);text-decoration:none;font-weight:650;}
+  ul.docs a:hover{text-decoration:underline;}
   .doc-meta{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;}
   .hint{color:var(--muted);font-size:12.5px;margin-top:8px;}
   .src{margin-top:24px;font-size:13px;color:var(--muted);}
