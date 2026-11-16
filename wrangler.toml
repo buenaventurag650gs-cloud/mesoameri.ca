@@ -20,8 +20,12 @@ database_id = "f81c5c39-c605-4ea2-be52-bd7322fd76eb"
 USER_AGENT = "mesoamerica-bot/0.1 (+contact: set CONTACT_EMAIL secret)"
 # Categorías a incluir en el digest, separadas por coma
 RELEVANT_CATEGORIES = "urbanismo,ambiental,residuos,agua-saneamiento,obra-publica"
+# Base para los enlaces del correo (cambiar al dominio propio cuando exista)
+PUBLIC_URL = "https://mesoameri-ca.buenaventurag650gs.workers.dev"
 
-# Secrets (configurar aparte con: wrangler secret put NOMBRE)
+# Secrets (configurar aparte con: wrangler secret put NOMBRE o en el dashboard)
 # - CONTACT_EMAIL        → email para User-Agent (requerido por algunos portales)
-# - DIGEST_RECIPIENTS    → lista de emails para enviar digest (opcional)
 # - ADMIN_TOKEN          → token para endpoints /admin/*
+# - RESEND_API_KEY       → API key de Resend para enviar el correo del digest
+# - DIGEST_EMAIL_TO      → destinatario(s) del digest (coma-separado)
+# - DIGEST_EMAIL_FROM    → remitente verificado (opcional; por defecto onboarding@resend.dev)

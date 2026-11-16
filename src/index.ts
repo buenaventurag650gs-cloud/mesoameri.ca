@@ -12,6 +12,7 @@
 import { renderCartelDetail } from "./cartel";
 import { classify, filterRelevant } from "./classifier";
 import { renderDigest } from "./digest";
+import { renderDigestEmail, sendEmail } from "./email";
 import { FETCHERS } from "./fetchers";
 import { dedupeKey, type Licitacion } from "./schema";
 import { Storage } from "./storage";
@@ -22,6 +23,11 @@ export interface Env {
   RELEVANT_CATEGORIES: string;
   ADMIN_TOKEN?: string;
   CONTACT_EMAIL?: string;
+  // Correo (Resend)
+  RESEND_API_KEY?: string;
+  DIGEST_EMAIL_TO?: string;
+  DIGEST_EMAIL_FROM?: string;
+  PUBLIC_URL?: string;
 }
 
 export default {
@@ -63,6 +69,17 @@ export default {
       return jsonResponse(summary);
     }
 
+    // --- Admin: enviar el correo del digest (prueba manual) ---
+    if (url.pathname === "/admin/email" && request.method === "POST") {
+      if (!env.ADMIN_TOKEN || request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      // force=1 envía aunque no haya nuevas hoy (útil para probar)
+      const force = url.searchParams.get("force") === "1";
+      const result = await sendDailyDigest(env, force);
+      return jsonResponse(result);
+    }
+
     // --- HTML digest (ruta por defecto) ---
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const country = url.searchParams.get("country") ?? undefined;
@@ -88,9 +105,42 @@ export default {
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runPipeline(env).then((s) => console.log("pipeline:", s)));
+    ctx.waitUntil(
+      runPipeline(env)
+        .then((s) => console.log("pipeline:", s))
+        .then(() => sendDailyDigest(env))
+        .then((r) => console.log("email:", r))
+        .catch((e) => console.error("scheduled error:", (e as Error).message))
+    );
   },
 };
+
+// ----- correo del digest (lo usan scheduled y /admin/email) -----
+
+async function sendDailyDigest(env: Env, force = false): Promise<Record<string, unknown>> {
+  if (!env.RESEND_API_KEY || !env.DIGEST_EMAIL_TO) {
+    return { sent: false, reason: "correo no configurado (falta RESEND_API_KEY o DIGEST_EMAIL_TO)" };
+  }
+  const storage = new Storage(env.DB);
+  const lics = await storage.vigentes("CR");
+  const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const newKeys = await storage.seenSince(dayAgo);
+  const newLics = lics.filter((l) => newKeys.has(dedupeKey(l)));
+
+  if (newLics.length === 0 && !force) {
+    return { sent: false, reason: "sin licitaciones nuevas hoy" };
+  }
+
+  const base = (env.PUBLIC_URL || "").replace(/\/$/, "");
+  const asOf = new Date().toISOString().slice(0, 10);
+  const html = renderDigestEmail(newLics.length ? newLics : lics.slice(0, 40), lics.length, base, asOf);
+  const subject = newLics.length
+    ? `${newLics.length} nuevas licitaciones — Mesoamérica CR (${asOf})`
+    : `Licitaciones Mesoamérica CR (${asOf})`;
+
+  const result = await sendEmail(env, subject, html);
+  return { ...result, nuevas: newLics.length, vigentes: lics.length };
+}
 
 // ----- pipeline (lo usan scheduled y /admin/run) -----
 
