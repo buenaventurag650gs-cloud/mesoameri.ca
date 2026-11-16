@@ -109,12 +109,19 @@ export default {
       const country = url.searchParams.get("country") ?? undefined;
       const lics = await storage.vigentes(country);
 
-      // Las de las últimas 24h se consideran "nuevas" para el highlight
-      const dayAgo = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-      const newKeys = await storage.seenSince(dayAgo);
+      // Nuevas (últimas 24h) — se destacan con pill amarilla.
+      // De esta semana (últimos 7 días) — para el filtro.
+      const now = Date.now();
+      const dayAgo = new Date(now - 24 * 3600 * 1000).toISOString();
+      const weekAgo = new Date(now - 7 * 24 * 3600 * 1000).toISOString();
+      const [newKeys, weekKeys] = await Promise.all([
+        storage.seenSince(dayAgo),
+        storage.seenSince(weekAgo),
+      ]);
 
       const html = renderDigest(lics, {
         newKeys,
+        weekKeys,
         showNav: true,
         title: country
           ? `Licitaciones — ${country}`

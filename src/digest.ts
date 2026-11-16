@@ -129,6 +129,8 @@ const STYLE = `
   .country { margin: 26px 0 12px; font-size: 13px; font-weight: 700; letter-spacing: .04em;
              text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
   .country::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .secnew { background: var(--ok); color: #fff; border-radius: 999px; padding: 1px 9px;
+            font-size: 10.5px; font-weight: 700; text-transform: none; letter-spacing: normal; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 14px; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 16px 14px;
           display: flex; flex-direction: column; gap: 10px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
@@ -213,7 +215,8 @@ const STYLE = `
 `;
 
 export interface DigestOptions {
-  newKeys?: Set<string>;
+  newKeys?: Set<string>;    // publicadas en las últimas 24h (pill "NUEVO")
+  weekKeys?: Set<string>;   // publicadas en los últimos 7 días (filtro)
   asOf?: string;
   title?: string;
   showNav?: boolean;
@@ -267,7 +270,7 @@ function nonSicopFacts(l: Licitacion): Array<[string, string]> {
   return out;
 }
 
-function card(l: Licitacion, isNew: boolean): string {
+function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
   const e = getEnriched(l);
   const procNo = getProcNo(l);
   const montoStr = e ? money(e.montoCRC ?? null, e.montoUSD ?? null) : "";
@@ -314,7 +317,8 @@ function card(l: Licitacion, isNew: boolean): string {
   return (
     `<article class="card ${isNew ? "new" : ""}"` +
     ` data-cats="${dataCats}" data-text="${dataText}"` +
-    ` data-new="${isNew ? 1 : 0}" data-monto="${dataMonto}" data-close="${dataClose}"` +
+    ` data-new="${isNew ? 1 : 0}" data-week="${isWeek ? 1 : 0}"` +
+    ` data-monto="${dataMonto}" data-close="${dataClose}"` +
     ` data-inst="${dataInst}" data-clasif="${dataClasif}" data-src="${dataSrc}" data-id="${favId}">` +
     `<div class="card-top"><div class="tags">${tags}</div>` +
     `<div class="toprt">${badgeBlock}` +
@@ -359,7 +363,9 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     .map(([c, items]) => `${COUNTRIES[c] ?? c} ${items.length}`)
     .join(" · ");
 
+  const weekKeys = opts.weekKeys ?? new Set<string>();
   const nuevas = lics.filter((l) => newKeys.has(dedupeKey(l))).length;
+  const esta_semana = lics.filter((l) => weekKeys.has(dedupeKey(l))).length;
 
   // Conteo por categoría (solo las de interés) para los chips.
   const catCounts = new Map<string, number>();
@@ -377,10 +383,17 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
       if (an !== bn) return an - bn;
       return (a.close_date ?? "z").localeCompare(b.close_date ?? "z");
     });
-    const cards = items.map((l) => card(l, newKeys.has(dedupeKey(l)))).join("");
+    const cards = items
+      .map((l) => card(l, newKeys.has(dedupeKey(l)), weekKeys.has(dedupeKey(l))))
+      .join("");
+    const nuevasCount = items.filter((l) => weekKeys.has(dedupeKey(l))).length;
+    const nuevasBadge = nuevasCount
+      ? ` <span class="secnew">${nuevasCount} esta semana</span>`
+      : "";
     sections.push(
       `<section class="section">` +
-      `<div class="country">${esc(COUNTRIES[country] ?? country)} · <span class="secn">${items.length}</span></div>` +
+      `<div class="country">${esc(COUNTRIES[country] ?? country)} · ` +
+      `<span class="secn">${items.length}</span>${nuevasBadge}</div>` +
       `<div class="grid">${cards}</div></section>`
     );
   }
@@ -404,6 +417,9 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     (lics.filter((l) => /^municipalidad/i.test(l.entity.trim())).length
       ? `<button class="chip" id="munichip">Municipalidades<span class="n">` +
         `${lics.filter((l) => /^municipalidad/i.test(l.entity.trim())).length}</span></button>`
+      : "") +
+    (esta_semana
+      ? `<button class="chip" id="weekchip">Esta semana<span class="n">${esta_semana}</span></button>`
       : "") +
     `<button class="chip" id="favchip" data-fav-filter="1">★ Guardados</button>`;
 
@@ -505,10 +521,12 @@ const FILTER_SCRIPT = `<script>
   var catChips = Array.prototype.slice.call(document.querySelectorAll('.chip[data-cat]'));
   var favChip = document.getElementById('favchip');
   var muniChip = document.getElementById('munichip');
+  var weekChip = document.getElementById('weekchip');
   var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
   var active = {};
   var favOnly = false;
   var muniOnly = false;
+  var weekOnly = false;
   var allChip = document.querySelector('.chip[data-cat=""]');
 
   var FKEY='meso_fav';
@@ -560,7 +578,8 @@ const FILTER_SCRIPT = `<script>
       var matchSrc = !src || (c.dataset.src||'')===src;
       var matchFav = !favOnly || isFav(c.dataset.id);
       var matchMuni = !muniOnly || (c.dataset.inst||'').indexOf('municipalidad') === 0;
-      var show = matchCat && matchText && matchInst && matchClasif && matchSrc && matchFav && matchMuni;
+      var matchWeek = !weekOnly || c.dataset.week==='1';
+      var show = matchCat && matchText && matchInst && matchClasif && matchSrc && matchFav && matchMuni && matchWeek;
       c.style.display = show ? '' : 'none';
       if (show) visible++;
     }
@@ -593,6 +612,9 @@ const FILTER_SCRIPT = `<script>
   });
   if (muniChip) muniChip.addEventListener('click', function(){
     muniOnly = !muniOnly; muniChip.classList.toggle('on', muniOnly); apply();
+  });
+  if (weekChip) weekChip.addEventListener('click', function(){
+    weekOnly = !weekOnly; weekChip.classList.toggle('on', weekOnly); apply();
   });
   document.addEventListener('click', function(ev){
     var t = ev.target;
