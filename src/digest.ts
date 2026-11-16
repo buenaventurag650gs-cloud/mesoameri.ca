@@ -3,6 +3,15 @@
 
 import { COUNTRIES, dedupeKey, type Licitacion } from "./schema";
 
+// Etiquetas legibles de las categorías de interés (para chips de filtro).
+const CAT_LABEL: Record<string, string> = {
+  urbanismo: "Urbanismo",
+  ambiental: "Ambiental",
+  residuos: "Residuos",
+  "agua-saneamiento": "Agua y saneamiento",
+  "obra-publica": "Obra pública",
+};
+
 function esc(s: string | null | undefined): string {
   return (s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
@@ -121,6 +130,22 @@ const STYLE = `
          border-radius: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; }
   .btn:hover { background: var(--brand-ink); }
   .empty { background:#fff; border:1px solid var(--line); border-radius:12px; padding:28px; text-align:center; color:var(--muted); }
+  /* Barra de filtros */
+  .filters { position: sticky; top: 0; z-index: 5; background: var(--bg);
+             padding: 12px 0 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .filters .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filters input[type=search] { flex: 1; min-width: 180px; border: 1px solid var(--line);
+             border-radius: 999px; padding: 8px 14px; font-size: 14px; background: #fff; color: var(--ink); }
+  .filters select { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; background: #fff; color: var(--ink); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .chip { background: #fff; border: 1px solid var(--line); color: var(--chip-ink); cursor: pointer;
+          padding: 5px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+  .chip:hover { border-color: var(--brand); }
+  .chip.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .chip .n { opacity: .7; font-weight: 600; margin-left: 4px; }
+  .count { color: var(--muted); font-size: 13px; margin: 12px 0 2px; }
+  .noresults { display:none; background:#fff; border:1px solid var(--line); border-radius:12px;
+               padding:28px; text-align:center; color:var(--muted); margin-top:12px; }
   @media (max-width: 420px) { .grid { grid-template-columns: 1fr; } }
 </style>
 `;
@@ -156,8 +181,16 @@ function card(l: Licitacion, isNew: boolean): string {
     ? `<div class="monto"><span class="lbl">Presupuesto</span>${esc(montoStr)}</div>`
     : "";
 
+  // Atributos para filtrar/ordenar en el navegador
+  const dataText = esc(`${l.title} ${l.entity} ${procNo}`.toLowerCase());
+  const dataCats = esc(l.categories.join(" "));
+  const dataMonto = e ? (e.montoUSD && e.montoUSD > 0 ? e.montoUSD * 520 : e.montoCRC ?? 0) : 0;
+  const dataClose = esc(l.close_date ?? "");
+
   return (
-    `<article class="card ${isNew ? "new" : ""}">` +
+    `<article class="card ${isNew ? "new" : ""}"` +
+    ` data-cats="${dataCats}" data-text="${dataText}"` +
+    ` data-new="${isNew ? 1 : 0}" data-monto="${dataMonto}" data-close="${dataClose}">` +
     `<div class="card-top"><div class="tags">${tags}</div>${isNew ? `<span class="pill-new">NUEVO</span>` : ""}</div>` +
     `<div><p class="title">${esc(l.title)}</p><p class="entity">${esc(l.entity)}</p></div>` +
     montoBlock +
@@ -186,27 +219,61 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
 
   const nuevas = lics.filter((l) => newKeys.has(dedupeKey(l))).length;
 
+  // Conteo por categoría (solo las de interés) para los chips.
+  const catCounts = new Map<string, number>();
+  for (const l of lics) {
+    for (const c of l.categories) {
+      if (CAT_LABEL[c]) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
+    }
+  }
+
   const sections: string[] = [];
   for (const [country, items] of [...byCountry.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    // Nuevas primero; dentro, por cierre más próximo.
     items.sort((a, b) => {
       const an = newKeys.has(dedupeKey(a)) ? 0 : 1;
       const bn = newKeys.has(dedupeKey(b)) ? 0 : 1;
       if (an !== bn) return an - bn;
       return (a.close_date ?? "z").localeCompare(b.close_date ?? "z");
     });
-    const cards = items
-      .map((l) => card(l, newKeys.has(dedupeKey(l))))
-      .join("");
+    const cards = items.map((l) => card(l, newKeys.has(dedupeKey(l)))).join("");
     sections.push(
-      `<div class="country">${esc(COUNTRIES[country] ?? country)} · ${items.length}</div>` +
-      `<div class="grid">${cards}</div>`
+      `<section class="section">` +
+      `<div class="country">${esc(COUNTRIES[country] ?? country)} · <span class="secn">${items.length}</span></div>` +
+      `<div class="grid">${cards}</div></section>`
     );
   }
 
   const body = sections.length
     ? sections.join("")
     : `<div class="empty">Sin concursos vigentes por ahora. El sistema se actualiza todos los días.</div>`;
+
+  // Chips de categoría
+  const chipOrder = ["urbanismo", "ambiental", "residuos", "agua-saneamiento", "obra-publica"];
+  const chips =
+    `<button class="chip on" data-cat="">Todas</button>` +
+    chipOrder
+      .filter((c) => catCounts.get(c))
+      .map(
+        (c) =>
+          `<button class="chip" data-cat="${esc(c)}">${esc(CAT_LABEL[c])}` +
+          `<span class="n">${catCounts.get(c)}</span></button>`
+      )
+      .join("");
+
+  const filters = sections.length
+    ? `<div class="filters">
+         <div class="row">
+           <input type="search" id="q" placeholder="Buscar por título, institución o número…" autocomplete="off">
+           <select id="sort">
+             <option value="cierre">Orden: cierre más próximo</option>
+             <option value="nuevos">Orden: más nuevos</option>
+             <option value="monto">Orden: mayor presupuesto</option>
+           </select>
+         </div>
+         <div class="chips">${chips}</div>
+       </div>
+       <p class="count">Mostrando <b id="count">${lics.length}</b> de ${lics.length} concursos</p>`
+    : "";
 
   const nav = opts.showNav
     ? `<nav class="nav">
@@ -230,6 +297,82 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
   <p class="sub">${asOf} · ${lics.length} vigentes${nuevas ? ` · ${nuevas} nuevas` : ""} · ${esc(totals)}</p>
 </header>
 ${nav}
+${filters}
 ${body}
-</div></body></html>`;
+<div class="noresults" id="noresults">No hay concursos que coincidan con el filtro.</div>
+</div>
+${sections.length ? FILTER_SCRIPT : ""}
+</body></html>`;
 }
+
+const FILTER_SCRIPT = `<script>
+(function(){
+  var q = document.getElementById('q');
+  var sortSel = document.getElementById('sort');
+  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
+  var active = {};
+  var allChip = document.querySelector('.chip[data-cat=""]');
+
+  function activeCount(){ return Object.keys(active).length; }
+
+  function sortGrids(mode){
+    var grids = document.querySelectorAll('.grid');
+    for (var g=0; g<grids.length; g++){
+      var items = Array.prototype.slice.call(grids[g].children);
+      items.sort(function(a,b){
+        if (mode==='monto') return (parseFloat(b.dataset.monto)||0)-(parseFloat(a.dataset.monto)||0);
+        if (mode==='nuevos'){
+          var d = (parseInt(b.dataset.new)||0)-(parseInt(a.dataset.new)||0);
+          if (d) return d;
+          return (a.dataset.close||'9').localeCompare(b.dataset.close||'9');
+        }
+        return (a.dataset.close||'9').localeCompare(b.dataset.close||'9');
+      });
+      for (var i=0;i<items.length;i++) grids[g].appendChild(items[i]);
+    }
+  }
+
+  function apply(){
+    var term = (q.value||'').toLowerCase().trim();
+    var nCats = activeCount();
+    var visible = 0;
+    for (var i=0;i<cards.length;i++){
+      var c = cards[i];
+      var cats = (c.dataset.cats||'').split(' ');
+      var matchCat = nCats===0;
+      if (!matchCat){ for (var k=0;k<cats.length;k++){ if (active[cats[k]]){ matchCat=true; break; } } }
+      var matchText = !term || (c.dataset.text||'').indexOf(term)>=0;
+      var show = matchCat && matchText;
+      c.style.display = show ? '' : 'none';
+      if (show) visible++;
+    }
+    sortGrids(sortSel.value);
+    var cnt = document.getElementById('count'); if (cnt) cnt.textContent = visible;
+    var secs = document.querySelectorAll('.section');
+    for (var s=0;s<secs.length;s++){
+      var any=false, cc=secs[s].querySelectorAll('.card');
+      for (var j=0;j<cc.length;j++){ if (cc[j].style.display!=='none'){ any=true; break; } }
+      secs[s].style.display = any ? '' : 'none';
+    }
+    document.getElementById('noresults').style.display = visible ? 'none' : 'block';
+  }
+
+  chips.forEach(function(ch){
+    ch.addEventListener('click', function(){
+      var cat = ch.dataset.cat;
+      if (cat===''){ active={}; chips.forEach(function(x){x.classList.remove('on');}); allChip.classList.add('on'); }
+      else {
+        allChip.classList.remove('on');
+        if (active[cat]){ delete active[cat]; ch.classList.remove('on'); }
+        else { active[cat]=true; ch.classList.add('on'); }
+        if (activeCount()===0) allChip.classList.add('on');
+      }
+      apply();
+    });
+  });
+  q.addEventListener('input', apply);
+  sortSel.addEventListener('change', apply);
+  apply();
+})();
+</script>`;
