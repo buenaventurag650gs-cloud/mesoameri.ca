@@ -63,6 +63,17 @@ function getProcNo(l: Licitacion): string {
   return m ? m[1] : "";
 }
 
+// Enlace a NUESTRA página de detalle consolidada (solo para SICOP/CR, que
+// tiene cartelSeq). Para otras fuentes usamos el source_url directo.
+function detailHref(l: Licitacion): string {
+  if (l.source === "sicop_cr" && l.source_id) {
+    const raw = l.raw as Record<string, unknown> | null;
+    const seq = raw && typeof raw.cartelSeq === "string" ? raw.cartelSeq : "00";
+    return `/cartel?no=${encodeURIComponent(l.source_id)}&seq=${encodeURIComponent(seq)}`;
+  }
+  return l.source_url;
+}
+
 const STYLE = `
 <style>
   :root {
@@ -152,7 +163,7 @@ function card(l: Licitacion, isNew: boolean): string {
     montoBlock +
     (facts.length ? `<div class="facts">${facts.join("")}</div>` : "") +
     `<div class="foot"><span class="procno">${esc(procNo)}</span>` +
-    `<a class="btn" href="${esc(l.source_url)}" target="_blank" rel="noopener">Ver en SICOP →</a></div>` +
+    `<a class="btn" href="${esc(detailHref(l))}">Ver detalle →</a></div>` +
     `</article>`
   );
 }

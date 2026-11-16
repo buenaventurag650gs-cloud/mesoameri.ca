@@ -9,6 +9,7 @@
 //   GET /api/runs.json           → últimas corridas (debugging)
 //   POST /admin/run              → disparar fetch manual (requiere ADMIN_TOKEN)
 
+import { renderCartelDetail } from "./cartel";
 import { classify, filterRelevant } from "./classifier";
 import { renderDigest } from "./digest";
 import { FETCHERS } from "./fetchers";
@@ -40,6 +41,17 @@ export default {
         .prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT 50")
         .all();
       return jsonResponse(results);
+    }
+
+    // --- Detalle consolidado de un concurso (nuestra propia página) ---
+    if (url.pathname === "/cartel") {
+      const no = url.searchParams.get("no");
+      const seq = url.searchParams.get("seq") ?? "00";
+      if (!no) return new Response("Falta parámetro 'no'", { status: 400 });
+      const html = await renderCartelDetail(no, seq);
+      return new Response(html, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
     // --- Admin: disparo manual ---
