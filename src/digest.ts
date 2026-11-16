@@ -233,6 +233,40 @@ function closeBadge(closeIso: string | null): { label: string; cls: string } | n
   return { label: `Cierra en ${days} días`, cls: "ok" };
 }
 
+// BID y PNUD no se enriquecen (las búsquedas secundarias costarían
+// subrequests), pero el `raw` ya trae metadatos útiles. Los
+// transforma en facts opcionales que la tarjeta puede mostrar.
+function nonSicopFacts(l: Licitacion): Array<[string, string]> {
+  const raw = l.raw as Record<string, unknown> | null;
+  if (!raw) return [];
+  const out: Array<[string, string]> = [];
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+
+  if (l.source === "bid") {
+    const tipo = str(raw.type);
+    const tipoMap: Record<string, string> = {
+      SPECIFIC: "Aviso específico",
+      GENERAL: "Aviso general",
+      EOI: "Expresión de interés",
+    };
+    if (tipo) out.push(["Tipo", tipoMap[tipo] ?? tipo]);
+    const metodo = str(raw.prcrmnt_mthd_engl_nm);
+    if (metodo) out.push(["Método", metodo]);
+    const sector = str(raw.sector) || str(raw.sectorenglnm);
+    if (sector) out.push(["Sector", sector]);
+    const proyecto = str(raw.projectname);
+    if (proyecto) out.push(["Proyecto", proyecto]);
+  } else if (l.source === "undp") {
+    const agencia = str(raw.agencia);
+    if (agencia) out.push(["Agencia", agencia]);
+    const area = str(raw.area);
+    if (area && area !== "OTHER") out.push(["Área", area]);
+    const ref = str(raw.ref);
+    if (ref) out.push(["Referencia", ref]);
+  }
+  return out;
+}
+
 function card(l: Licitacion, isNew: boolean): string {
   const e = getEnriched(l);
   const procNo = getProcNo(l);
@@ -252,6 +286,8 @@ function card(l: Licitacion, isNew: boolean): string {
   if (e?.clasificacion) addFact("Clasificación", e.clasificacion);
   if (e?.tipoProceso) addFact("Tipo", e.tipoProceso);
   if (e?.modalidad) addFact("Modalidad", e.modalidad);
+  // Facts específicos de BID/UNDP cuando no hay datos de enriquecimiento.
+  if (!e) for (const [k, v] of nonSicopFacts(l)) addFact(k, v);
   addFact("Cierre recepción", fmtDt(l.close_date));
   if (e?.apertura) addFact("Apertura", fmtDt(e.apertura));
   addFact("Publicación", fmtDate(l.publish_date));
@@ -288,8 +324,22 @@ function card(l: Licitacion, isNew: boolean): string {
     montoBlock +
     (facts.length ? `<div class="facts">${facts.join("")}</div>` : "") +
     `<div class="foot"><span class="procno">${esc(procNo)}</span>` +
-    `<a class="btn" href="${esc(detailHref(l))}">Ver detalle →</a></div>` +
+    detailButton(l) +
+    `</div>` +
     `</article>`
+  );
+}
+
+// El botón de la tarjeta: para SICOP abre nuestra ficha consolidada en la
+// misma pestaña; para BID/PNUD abre el aviso original en otra pestaña.
+function detailButton(l: Licitacion): string {
+  const href = detailHref(l);
+  const internal =
+    l.source === "sicop_cr" && l.source_id && /^\d+$/.test(l.source_id);
+  if (internal) return `<a class="btn" href="${esc(href)}">Ver detalle →</a>`;
+  return (
+    `<a class="btn" href="${esc(href)}" target="_blank" rel="noopener">` +
+    `Abrir en origen ↗</a>`
   );
 }
 
