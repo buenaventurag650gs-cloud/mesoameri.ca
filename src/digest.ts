@@ -361,15 +361,24 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
        <p class="count">Mostrando <b id="count">${lics.length}</b> de ${lics.length} concursos</p>`
     : "";
 
+  // Nav dinámica: solo muestra los países que tienen datos en este momento.
+  // Orden geográfico norte→sur; cualquier país nuevo aparece automáticamente.
+  const GEO_ORDER = ["MX","GT","BZ","SV","HN","NI","CR","PA","DO","MULTI"];
+  const countriesWithData = [...byCountry.keys()].sort(
+    (a, b) => {
+      const ai = GEO_ORDER.indexOf(a);
+      const bi = GEO_ORDER.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    }
+  );
+  const countryLinks = countriesWithData
+    .map((c) => `<a href="/?country=${esc(c)}">${esc(COUNTRIES[c] ?? c)}</a>`)
+    .join("\n         ");
+
   const nav = opts.showNav
     ? `<nav class="nav">
          <a href="/">Todas</a>
-         <a href="/?country=CR">Costa Rica</a>
-         <a href="/?country=GT">Guatemala</a>
-         <a href="/?country=SV">El Salvador</a>
-         <a href="/?country=HN">Honduras</a>
-         <a href="/?country=NI">Nicaragua</a>
-         <a href="/?country=PA">Panamá</a>
+         ${countryLinks}
          <a href="/api/vigentes.json">JSON</a>
        </nav>`
     : "";
