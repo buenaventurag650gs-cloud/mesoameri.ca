@@ -25,14 +25,20 @@ interface CartelFile {
 // Archivo con su enlace de descarga ya resuelto.
 interface ResolvedFile extends CartelFile { url?: string }
 
-const HEADERS = {
-  "Content-Type": "application/json",
-  Accept: "application/json",
-  "User-Agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  Origin: "https://www.sicop.go.cr",
-  Referer: SICOP_SEARCH,
-};
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+// En GET no mandamos Content-Type (algunos endpoints lo rechazan sin cuerpo).
+function headers(withBody: boolean): Record<string, string> {
+  const h: Record<string, string> = {
+    Accept: "application/json, text/plain, */*",
+    "User-Agent": UA,
+    Origin: "https://www.sicop.go.cr",
+    Referer: SICOP_SEARCH,
+  };
+  if (withBody) h["Content-Type"] = "application/json";
+  return h;
+}
 
 async function req<T>(url: string, body?: unknown): Promise<T> {
   const ac = new AbortController();
@@ -41,7 +47,7 @@ async function req<T>(url: string, body?: unknown): Promise<T> {
     const r = await fetch(url, {
       method: body ? "POST" : "GET",
       signal: ac.signal,
-      headers: HEADERS,
+      headers: headers(!!body),
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -98,7 +104,7 @@ async function reqText(url: string): Promise<string> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
   try {
-    const r = await fetch(url, { headers: HEADERS, signal: ac.signal });
+    const r = await fetch(url, { headers: headers(false), signal: ac.signal });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.text();
   } finally {
