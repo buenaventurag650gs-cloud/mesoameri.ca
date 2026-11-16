@@ -92,7 +92,8 @@ const STYLE = `
   }
   * { box-sizing: border-box; }
   body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         color: var(--ink); background: var(--bg); margin: 0; padding: 0 16px 48px; }
+         color: var(--ink); background: var(--bg); margin: 0; padding: 0 16px 48px;
+         overflow-wrap: anywhere; word-break: break-word; }
   .wrap { max-width: 1180px; margin: 0 auto; }
   header.top { padding: 28px 0 8px; }
   h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
@@ -104,11 +105,11 @@ const STYLE = `
   .country { margin: 26px 0 12px; font-size: 13px; font-weight: 700; letter-spacing: .04em;
              text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
   .country::after { content: ""; flex: 1; height: 1px; background: var(--line); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 14px; }
   .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 16px 14px;
           display: flex; flex-direction: column; gap: 10px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
   .card.new { background: var(--new); border-color: var(--new-line); }
-  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
   .tags { display: flex; flex-wrap: wrap; gap: 5px; }
   .tag { background: var(--chip); color: var(--chip-ink); border-radius: 6px;
          padding: 2px 8px; font-size: 11.5px; font-weight: 600; }
@@ -124,8 +125,9 @@ const STYLE = `
   .fact .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
   .fact .v { font-weight: 600; }
   .foot { display: flex; justify-content: space-between; align-items: center; gap: 10px;
-          border-top: 1px solid var(--line); padding-top: 10px; }
-  .procno { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
+          border-top: 1px solid var(--line); padding-top: 10px; flex-wrap: wrap; }
+  .procno { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted);
+            min-width: 0; }
   .btn { background: var(--brand); color: #fff; text-decoration: none; padding: 7px 14px;
          border-radius: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; }
   .btn:hover { background: var(--brand-ink); }
@@ -158,7 +160,25 @@ const STYLE = `
   .selects select { flex: 1; min-width: 160px; }
   .noresults { display:none; background:#fff; border:1px solid var(--line); border-radius:12px;
                padding:28px; text-align:center; color:var(--muted); margin-top:12px; }
-  @media (max-width: 420px) { .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) {
+    body { padding: 0 10px 40px; font-size: 14.5px; }
+    h1 { font-size: 19px; }
+    .grid { grid-template-columns: 1fr; gap: 12px; }
+    .card { padding: 14px 13px 12px; }
+    .facts { grid-template-columns: 1fr; gap: 8px; }
+    .title { font-size: 15px; }
+    .monto { font-size: 18px; }
+    .filters { padding: 10px 0 8px; }
+    .filters .row { flex-direction: column; align-items: stretch; }
+    .filters input[type=search], .filters select { width: 100%; min-width: 0; }
+    .selects { flex-direction: column; }
+    .selects select { width: 100%; min-width: 0; }
+    .foot { gap: 8px; }
+    .foot .btn { width: 100%; text-align: center; }
+    .procno { font-size: 11.5px; }
+    .nav { gap: 5px; }
+    .nav a { padding: 5px 10px; font-size: 12.5px; }
+  }
 </style>
 `;
 
@@ -296,6 +316,10 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
           `<span class="n">${catCounts.get(c)}</span></button>`
       )
       .join("") +
+    (lics.filter((l) => /^municipalidad/i.test(l.entity.trim())).length
+      ? `<button class="chip" id="munichip">Municipalidades<span class="n">` +
+        `${lics.filter((l) => /^municipalidad/i.test(l.entity.trim())).length}</span></button>`
+      : "") +
     `<button class="chip" id="favchip" data-fav-filter="1">★ Guardados</button>`;
 
   // Instituciones únicas (para el select)
@@ -373,9 +397,11 @@ const FILTER_SCRIPT = `<script>
   var clasifSel = document.getElementById('clasif');
   var catChips = Array.prototype.slice.call(document.querySelectorAll('.chip[data-cat]'));
   var favChip = document.getElementById('favchip');
+  var muniChip = document.getElementById('munichip');
   var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
   var active = {};
   var favOnly = false;
+  var muniOnly = false;
   var allChip = document.querySelector('.chip[data-cat=""]');
 
   var FKEY='meso_fav';
@@ -424,7 +450,8 @@ const FILTER_SCRIPT = `<script>
       var matchInst = !inst || (c.dataset.inst||'')===inst;
       var matchClasif = !clasif || (c.dataset.clasif||'')===clasif;
       var matchFav = !favOnly || isFav(c.dataset.id);
-      var show = matchCat && matchText && matchInst && matchClasif && matchFav;
+      var matchMuni = !muniOnly || (c.dataset.inst||'').indexOf('municipalidad') === 0;
+      var show = matchCat && matchText && matchInst && matchClasif && matchFav && matchMuni;
       c.style.display = show ? '' : 'none';
       if (show) visible++;
     }
@@ -454,6 +481,9 @@ const FILTER_SCRIPT = `<script>
   });
   if (favChip) favChip.addEventListener('click', function(){
     favOnly = !favOnly; favChip.classList.toggle('on', favOnly); apply();
+  });
+  if (muniChip) muniChip.addEventListener('click', function(){
+    muniOnly = !muniOnly; muniChip.classList.toggle('on', muniOnly); apply();
   });
   document.addEventListener('click', function(ev){
     var t = ev.target;
