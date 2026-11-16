@@ -91,7 +91,7 @@ async function runPipeline(env: Env): Promise<Record<string, unknown>> {
   const perSource: Record<string, unknown> = {};
   let totalRelevant = 0;
 
-  for (const { name, fn } of FETCHERS) {
+  for (const { name, fn, enrich } of FETCHERS) {
     const startedAt = new Date().toISOString();
     let lics: Licitacion[] = [];
     let error: string | undefined;
@@ -107,6 +107,15 @@ async function runPipeline(env: Env): Promise<Record<string, unknown>> {
     const classified = lics.map(classify);
     const relevant = filterRelevant(classified, include.size > 0 ? include : null);
     totalRelevant += relevant.length;
+
+    // Enriquecer los relevantes con datos de detalle (si la fuente lo soporta)
+    if (enrich && relevant.length > 0) {
+      try {
+        await enrich(relevant, env);
+      } catch (e) {
+        console.error(`enrich ${name} failed:`, (e as Error).message);
+      }
+    }
 
     // Guardar
     const counts = await storage.upsertMany(relevant);

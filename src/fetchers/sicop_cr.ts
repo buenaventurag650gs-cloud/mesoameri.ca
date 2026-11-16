@@ -15,6 +15,13 @@ import { sleep, type FetcherEnv } from "./base";
 const API_URL =
   "https://prod-api.sicop.go.cr/bid/api/v1/public/epCartel/searchEpCartelsSp";
 
+// Detalle por cartel: presupuesto, tipo legible, clasificación, apertura, etc.
+const DETAIL_URL =
+  "https://prod-api.sicop.go.cr/bid/api/v1/public/epCartel/findPublishedById";
+
+const MAX_ENRICH = 40; // tope de llamadas de detalle por corrida (límite de subrequests)
+const ENRICH_DELAY_MS = 350;
+
 const PAGE_SIZE = 30; // confirmado OK; >50 puede dar 422
 const MAX_PAGES = 25; // tope de seguridad
 const LOOKBACK_DAYS = 2; // publicados en las últimas ~48h
@@ -105,6 +112,68 @@ export async function fetchSicopCr(env: FetcherEnv): Promise<Licitacion[]> {
   }
 
   return out;
+}
+
+// Datos enriquecidos que guardamos dentro de `raw._enriched`.
+export interface SicopEnriched {
+  montoCRC: number | null;
+  montoUSD: number | null;
+  tipoProceso: string; // "Licitación Reducida"
+  modalidad: string; // "Según demanda"
+  clasificacion: string; // "Bienes" | "Servicios" | "Obras"
+  apertura: string | null; // ISO
+  duracionContrato: string; // "12 Meses"
+  contacto: string;
+  numLineas: number | null;
+}
+
+// Enriquece SOLO los concursos relevantes (ya filtrados) con una llamada de
+// detalle cada uno. Muta cada Licitacion: mete el detalle en `raw._enriched`
+// y completa close_date si venía nulo.
+export async function enrichSicopCr(lics: Licitacion[]): Promise<void> {
+  let n = 0;
+  for (const lic of lics) {
+    if (n >= MAX_ENRICH) break;
+    const cartelNo = lic.source_id;
+    const rawRec = (lic.raw ?? {}) as SpCartel;
+    const cartelSeq = rawRec.cartelSeq ?? "00";
+    if (!cartelNo) continue;
+
+    try {
+      const h = await postJson<Record<string, unknown>>(DETAIL_URL, {
+        cartelNo,
+        cartelSeq,
+      });
+
+      const enriched: SicopEnriched = {
+        montoCRC: numOrNull(h.cartelBudget),
+        montoUSD: numOrNull(h.cartelBudgetUsd),
+        tipoProceso: titleCase(strOrEmpty(h.proceTypeNm)),
+        modalidad: strOrEmpty(h.proceTypeDetailNm),
+        clasificacion: titleCase(strOrEmpty(h.ppsTypeNm)),
+        apertura: isoFromHeader(h.openbidDt),
+        duracionContrato:
+          h.contractDur != null && h.contractDur !== ""
+            ? `${h.contractDur} ${strOrEmpty(h.contractDurUnitNm)}`.trim()
+            : "",
+        contacto: strOrEmpty(h.executorNm),
+        numLineas: numOrNull(h.cartelProdCnt),
+      };
+
+      lic.raw = { ...rawRec, _enriched: enriched };
+
+      // La cabecera trae fechas limpias; completamos cierre si faltaba.
+      if (!lic.close_date) {
+        const iso = isoFromHeader(h.biddocEndDt);
+        if (iso) lic.close_date = iso;
+      }
+      n++;
+    } catch (e) {
+      console.warn(`sicop_cr enrich ${cartelNo}: ${(e as Error).message}`);
+      // Sin enriquecer: el concurso igual se muestra con los datos del listado.
+    }
+    await sleep(ENRICH_DELAY_MS);
+  }
 }
 
 function cartelToLicitacion(c: SpCartel): Licitacion | null {
@@ -206,4 +275,37 @@ function crDateToIsoDateTime(s: string | null | undefined): string | null {
   const pad = (n: number) => String(n).padStart(2, "0");
   // Hora local CR (UTC-06:00).
   return `${p.y}-${pad(p.mo)}-${pad(p.d)}T${pad(p.h)}:${pad(p.mi)}:${pad(p.se)}-06:00`;
+}
+
+// La cabecera (findPublishedById) ya devuelve ISO sin zona, p.ej.
+// "2026-11-19T11:00:00" (hora local CR). Le añadimos el offset -06:00.
+function isoFromHeader(v: unknown): string | null {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const se = m[6] ?? "00";
+  return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${se}-06:00`;
+}
+
+// ---- Helpers de parseo tolerante ----
+function numOrNull(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function strOrEmpty(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+// SICOP manda muchos textos EN MAYÚSCULAS ("LICITACIÓN REDUCIDA", "BIENES").
+// Los pasamos a Capitalización por palabra para que la UI se vea prolija.
+function titleCase(s: string): string {
+  if (!s) return "";
+  // Si no está todo en mayúsculas, lo dejamos como viene.
+  if (s !== s.toUpperCase()) return s;
+  return s
+    .toLowerCase()
+    .replace(/(^|[\s(/-])([a-záéíóúñ])/g, (_, p, c) => p + c.toUpperCase());
 }
