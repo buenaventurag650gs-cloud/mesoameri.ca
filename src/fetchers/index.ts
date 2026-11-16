@@ -2,7 +2,7 @@
 
 import type { Licitacion } from "../schema";
 import type { FetcherEnv } from "./base";
-import { fetchSicopCr, enrichSicopCr } from "./sicop_cr";
+import { fetchSicopCr, enrichSicopCr, type EnrichStats } from "./sicop_cr";
 import { fetchUngm } from "./ungm";
 
 export interface FetcherDef {
@@ -10,7 +10,8 @@ export interface FetcherDef {
   fn: (env: FetcherEnv) => Promise<Licitacion[]>;
   // Opcional: enriquece los concursos YA filtrados como relevantes con datos
   // de detalle (muta cada Licitacion). Se corre entre filtrar y guardar.
-  enrich?: (lics: Licitacion[], env: FetcherEnv) => Promise<void>;
+  // Devuelve estadísticas de diagnóstico.
+  enrich?: (lics: Licitacion[], env: FetcherEnv) => Promise<EnrichStats | void>;
 }
 
 export const FETCHERS: FetcherDef[] = [

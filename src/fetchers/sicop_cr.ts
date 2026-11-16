@@ -23,8 +23,8 @@ const API_URL =
 const DETAIL_URL =
   "https://prod-api.sicop.go.cr/bid/api/v1/public/epCartel/findPublishedById";
 
-const MAX_ENRICH = 40; // tope de enriquecimientos NUEVOS por corrida
-const ENRICH_DELAY_MS = 300;
+const MAX_ENRICH = 20; // enriquecimientos NUEVOS por corrida (cabe en plan free)
+const ENRICH_DELAY_MS = 250;
 
 const PAGE_SIZE = 30; // máximo que acepta la API (>30 da 422)
 const WINDOW_DAYS = 60; // ventana de publicación para el universo de "abiertos"
@@ -142,10 +142,18 @@ export interface SicopEnriched {
   numLineas: number | null;
 }
 
+export interface EnrichStats {
+  attempted: number;
+  enriched: number;
+  failed: number;
+  lastError: string | null;
+}
+
 // Enriquece SOLO los concursos relevantes (ya filtrados) con una llamada de
 // detalle cada uno. Muta cada Licitacion: mete el detalle en `raw._enriched`
-// y completa close_date si venía nulo.
-export async function enrichSicopCr(lics: Licitacion[]): Promise<void> {
+// y completa close_date si venía nulo. Devuelve estadísticas para diagnóstico.
+export async function enrichSicopCr(lics: Licitacion[]): Promise<EnrichStats> {
+  const stats: EnrichStats = { attempted: 0, enriched: 0, failed: 0, lastError: null };
   let n = 0;
   for (const lic of lics) {
     if (n >= MAX_ENRICH) break;
@@ -154,6 +162,7 @@ export async function enrichSicopCr(lics: Licitacion[]): Promise<void> {
     const cartelSeq = rawRec.cartelSeq ?? "00";
     if (!cartelNo) continue;
 
+    stats.attempted++;
     try {
       const h = await postJson<Record<string, unknown>>(DETAIL_URL, {
         cartelNo,
@@ -183,12 +192,16 @@ export async function enrichSicopCr(lics: Licitacion[]): Promise<void> {
         if (iso) lic.close_date = iso;
       }
       n++;
+      stats.enriched++;
     } catch (e) {
-      console.warn(`sicop_cr enrich ${cartelNo}: ${(e as Error).message}`);
+      stats.failed++;
+      stats.lastError = (e as Error).message;
+      console.warn(`sicop_cr enrich ${cartelNo}: ${stats.lastError}`);
       // Sin enriquecer: el concurso igual se muestra con los datos del listado.
     }
     await sleep(ENRICH_DELAY_MS);
   }
+  return stats;
 }
 
 function cartelToLicitacion(c: SpCartel): Licitacion | null {

@@ -111,12 +111,19 @@ async function runPipeline(env: Env): Promise<Record<string, unknown>> {
     // Enriquecer con datos de detalle SOLO los que aún no tienen detalle
     // guardado (nuevos). Así la 1ª corrida llena el backlog y las siguientes
     // solo tocan lo nuevo, sin repetir llamadas caras.
+    let enrichInfo: unknown = undefined;
     if (enrich && relevant.length > 0) {
       try {
         const already = await storage.enrichedKeys(relevant.map(dedupeKey));
-        const toEnrich = relevant.filter((l) => !already.has(dedupeKey(l)));
-        if (toEnrich.length > 0) await enrich(toEnrich, env);
+        const pending = relevant.filter((l) => !already.has(dedupeKey(l)));
+        if (pending.length > 0) {
+          const stats = await enrich(pending, env);
+          enrichInfo = { pending: pending.length, ...(stats ?? {}) };
+        } else {
+          enrichInfo = { pending: 0 };
+        }
       } catch (e) {
+        enrichInfo = { error: (e as Error).message };
         console.error(`enrich ${name} failed:`, (e as Error).message);
       }
     }
@@ -125,7 +132,13 @@ async function runPipeline(env: Env): Promise<Record<string, unknown>> {
     const counts = await storage.upsertMany(relevant);
     await storage.recordRun(name, startedAt, counts, error);
 
-    perSource[name] = { fetched: lics.length, relevant: relevant.length, ...counts, error };
+    perSource[name] = {
+      fetched: lics.length,
+      relevant: relevant.length,
+      ...counts,
+      error,
+      ...(enrichInfo ? { enrich: enrichInfo } : {}),
+    };
   }
 
   return {
