@@ -144,6 +144,18 @@ const STYLE = `
   .chip.on { background: var(--brand); color: #fff; border-color: var(--brand); }
   .chip .n { opacity: .7; font-weight: 600; margin-left: 4px; }
   .count { color: var(--muted); font-size: 13px; margin: 12px 0 2px; }
+  .toprt { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .closebadge { border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .closebadge.urgent { background: #fde8e8; color: #b42318; }
+  .closebadge.soon   { background: #fef3d7; color: #9a6a00; }
+  .closebadge.ok     { background: #eef3fb; color: #2a4a73; }
+  .closebadge.past   { background: #eceff3; color: #64748b; }
+  .star { border: none; background: none; cursor: pointer; font-size: 18px; line-height: 1;
+          color: #c4ccd8; padding: 0 2px; }
+  .star.on { color: #f1b400; }
+  .star:hover { color: #f1b400; }
+  .selects { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+  .selects select { flex: 1; min-width: 160px; }
   .noresults { display:none; background:#fff; border:1px solid var(--line); border-radius:12px;
                padding:28px; text-align:center; color:var(--muted); margin-top:12px; }
   @media (max-width: 420px) { .grid { grid-template-columns: 1fr; } }
@@ -157,10 +169,25 @@ export interface DigestOptions {
   showNav?: boolean;
 }
 
+// Días hasta el cierre de recepción. Devuelve {label, cls} o null.
+function closeBadge(closeIso: string | null): { label: string; cls: string } | null {
+  if (!closeIso) return null;
+  const close = new Date(closeIso).getTime();
+  if (isNaN(close)) return null;
+  const days = Math.ceil((close - Date.now()) / 86_400_000);
+  if (days < 0) return { label: "Cerrado", cls: "past" };
+  if (days === 0) return { label: "Cierra hoy", cls: "urgent" };
+  if (days === 1) return { label: "Cierra mañana", cls: "urgent" };
+  if (days <= 3) return { label: `Cierra en ${days} días`, cls: "urgent" };
+  if (days <= 7) return { label: `Cierra en ${days} días`, cls: "soon" };
+  return { label: `Cierra en ${days} días`, cls: "ok" };
+}
+
 function card(l: Licitacion, isNew: boolean): string {
   const e = getEnriched(l);
   const procNo = getProcNo(l);
   const montoStr = e ? money(e.montoCRC ?? null, e.montoUSD ?? null) : "";
+  const badge = closeBadge(l.close_date);
 
   const tags = l.categories.map((c) => `<span class="tag">${esc(c)}</span>`).join("");
 
@@ -180,18 +207,28 @@ function card(l: Licitacion, isNew: boolean): string {
   const montoBlock = montoStr
     ? `<div class="monto"><span class="lbl">Presupuesto</span>${esc(montoStr)}</div>`
     : "";
+  const badgeBlock = badge
+    ? `<span class="closebadge ${badge.cls}">${esc(badge.label)}</span>`
+    : "";
 
   // Atributos para filtrar/ordenar en el navegador
   const dataText = esc(`${l.title} ${l.entity} ${procNo}`.toLowerCase());
   const dataCats = esc(l.categories.join(" "));
   const dataMonto = e ? (e.montoUSD && e.montoUSD > 0 ? e.montoUSD * 520 : e.montoCRC ?? 0) : 0;
   const dataClose = esc(l.close_date ?? "");
+  const dataInst = esc(l.entity.toLowerCase());
+  const dataClasif = esc(e?.clasificacion ?? "");
+  const favId = esc(l.source_id);
 
   return (
     `<article class="card ${isNew ? "new" : ""}"` +
     ` data-cats="${dataCats}" data-text="${dataText}"` +
-    ` data-new="${isNew ? 1 : 0}" data-monto="${dataMonto}" data-close="${dataClose}">` +
-    `<div class="card-top"><div class="tags">${tags}</div>${isNew ? `<span class="pill-new">NUEVO</span>` : ""}</div>` +
+    ` data-new="${isNew ? 1 : 0}" data-monto="${dataMonto}" data-close="${dataClose}"` +
+    ` data-inst="${dataInst}" data-clasif="${dataClasif}" data-id="${favId}">` +
+    `<div class="card-top"><div class="tags">${tags}</div>` +
+    `<div class="toprt">${badgeBlock}` +
+    `<button class="star" data-fav="${favId}" title="Guardar" aria-label="Guardar">☆</button>` +
+    `${isNew ? `<span class="pill-new">NUEVO</span>` : ""}</div></div>` +
     `<div><p class="title">${esc(l.title)}</p><p class="entity">${esc(l.entity)}</p></div>` +
     montoBlock +
     (facts.length ? `<div class="facts">${facts.join("")}</div>` : "") +
@@ -247,7 +284,7 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     ? sections.join("")
     : `<div class="empty">Sin concursos vigentes por ahora. El sistema se actualiza todos los días.</div>`;
 
-  // Chips de categoría
+  // Chips de categoría (+ favoritos)
   const chipOrder = ["urbanismo", "ambiental", "residuos", "agua-saneamiento", "obra-publica"];
   const chips =
     `<button class="chip on" data-cat="">Todas</button>` +
@@ -258,7 +295,26 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
           `<button class="chip" data-cat="${esc(c)}">${esc(CAT_LABEL[c])}` +
           `<span class="n">${catCounts.get(c)}</span></button>`
       )
-      .join("");
+      .join("") +
+    `<button class="chip" id="favchip" data-fav-filter="1">★ Guardados</button>`;
+
+  // Instituciones únicas (para el select)
+  const insts = [...new Set(lics.map((l) => l.entity).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, "es")
+  );
+  const instOptions =
+    `<option value="">Todas las instituciones</option>` +
+    insts.map((i) => `<option value="${esc(i.toLowerCase())}">${esc(i)}</option>`).join("");
+
+  // Clasificaciones presentes (de los enriquecidos)
+  const clasifSet = new Set<string>();
+  for (const l of lics) {
+    const e = getEnriched(l);
+    if (e?.clasificacion) clasifSet.add(e.clasificacion);
+  }
+  const clasifOptions =
+    `<option value="">Toda clasificación</option>` +
+    [...clasifSet].sort().map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
 
   const filters = sections.length
     ? `<div class="filters">
@@ -271,6 +327,10 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
            </select>
          </div>
          <div class="chips">${chips}</div>
+         <div class="selects">
+           <select id="inst">${instOptions}</select>
+           <select id="clasif">${clasifOptions}</select>
+         </div>
        </div>
        <p class="count">Mostrando <b id="count">${lics.length}</b> de ${lics.length} concursos</p>`
     : "";
@@ -309,10 +369,27 @@ const FILTER_SCRIPT = `<script>
 (function(){
   var q = document.getElementById('q');
   var sortSel = document.getElementById('sort');
-  var chips = Array.prototype.slice.call(document.querySelectorAll('.chip'));
+  var instSel = document.getElementById('inst');
+  var clasifSel = document.getElementById('clasif');
+  var catChips = Array.prototype.slice.call(document.querySelectorAll('.chip[data-cat]'));
+  var favChip = document.getElementById('favchip');
   var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
   var active = {};
+  var favOnly = false;
   var allChip = document.querySelector('.chip[data-cat=""]');
+
+  var FKEY='meso_fav';
+  function loadFavs(){ try{ return JSON.parse(localStorage.getItem(FKEY)||'[]'); }catch(e){ return []; } }
+  var favs = loadFavs();
+  function isFav(id){ return favs.indexOf(id)>=0; }
+  function toggleFav(id){ var i=favs.indexOf(id); if(i>=0)favs.splice(i,1); else favs.push(id);
+    try{ localStorage.setItem(FKEY, JSON.stringify(favs)); }catch(e){} }
+  function paintStars(){
+    var stars=document.querySelectorAll('.star');
+    for(var i=0;i<stars.length;i++){ var id=stars[i].getAttribute('data-fav');
+      if(isFav(id)){ stars[i].classList.add('on'); stars[i].textContent='★'; }
+      else { stars[i].classList.remove('on'); stars[i].textContent='☆'; } }
+  }
 
   function activeCount(){ return Object.keys(active).length; }
 
@@ -335,6 +412,7 @@ const FILTER_SCRIPT = `<script>
 
   function apply(){
     var term = (q.value||'').toLowerCase().trim();
+    var inst = instSel.value, clasif = clasifSel.value;
     var nCats = activeCount();
     var visible = 0;
     for (var i=0;i<cards.length;i++){
@@ -343,7 +421,10 @@ const FILTER_SCRIPT = `<script>
       var matchCat = nCats===0;
       if (!matchCat){ for (var k=0;k<cats.length;k++){ if (active[cats[k]]){ matchCat=true; break; } } }
       var matchText = !term || (c.dataset.text||'').indexOf(term)>=0;
-      var show = matchCat && matchText;
+      var matchInst = !inst || (c.dataset.inst||'')===inst;
+      var matchClasif = !clasif || (c.dataset.clasif||'')===clasif;
+      var matchFav = !favOnly || isFav(c.dataset.id);
+      var show = matchCat && matchText && matchInst && matchClasif && matchFav;
       c.style.display = show ? '' : 'none';
       if (show) visible++;
     }
@@ -358,10 +439,10 @@ const FILTER_SCRIPT = `<script>
     document.getElementById('noresults').style.display = visible ? 'none' : 'block';
   }
 
-  chips.forEach(function(ch){
+  catChips.forEach(function(ch){
     ch.addEventListener('click', function(){
       var cat = ch.dataset.cat;
-      if (cat===''){ active={}; chips.forEach(function(x){x.classList.remove('on');}); allChip.classList.add('on'); }
+      if (cat===''){ active={}; catChips.forEach(function(x){x.classList.remove('on');}); allChip.classList.add('on'); }
       else {
         allChip.classList.remove('on');
         if (active[cat]){ delete active[cat]; ch.classList.remove('on'); }
@@ -371,8 +452,21 @@ const FILTER_SCRIPT = `<script>
       apply();
     });
   });
+  if (favChip) favChip.addEventListener('click', function(){
+    favOnly = !favOnly; favChip.classList.toggle('on', favOnly); apply();
+  });
+  document.addEventListener('click', function(ev){
+    var t = ev.target;
+    if (t && t.classList && t.classList.contains('star')){
+      toggleFav(t.getAttribute('data-fav')); paintStars();
+      if (favOnly) apply();
+    }
+  });
   q.addEventListener('input', apply);
   sortSel.addEventListener('change', apply);
+  instSel.addEventListener('change', apply);
+  clasifSel.addEventListener('change', apply);
+  paintStars();
   apply();
 })();
 </script>`;
