@@ -69,7 +69,8 @@ export default {
       if (!env.ADMIN_TOKEN || request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
         return new Response("Forbidden", { status: 403 });
       }
-      const summary = await runPipeline(env);
+      const allSources = url.searchParams.get("all") === "1";
+      const summary = await runPipeline(env, allSources);
       return jsonResponse(summary);
     }
 
@@ -218,7 +219,27 @@ async function sendDailyDigest(env: Env, force = false): Promise<Record<string, 
 
 // ----- pipeline (lo usan scheduled y /admin/run) -----
 
-async function runPipeline(env: Env): Promise<Record<string, unknown>> {
+// Rotación de fuentes por día de la semana para no superar el límite de
+// subrequests del plan gratuito de Cloudflare (~50 por invocación).
+//
+//  SICOP (CR)  → todos los días   (~26 subrequests por término de búsqueda)
+//  BID         → lun, mié, vie    (9 subrequests)
+//  UNDP        → mar, jue, sáb    (9 subrequests)
+//  domingo     → solo SICOP       (mantenimiento mínimo)
+//
+// Si se llama desde /admin/run?all=1, corre todo sin rotación (diagnóstico).
+function activeFetchers(allSources = false): typeof FETCHERS {
+  if (allSources) return FETCHERS;
+  const dow = new Date().getUTCDay(); // 0=dom, 1=lun … 6=sáb
+  return FETCHERS.filter(({ name }) => {
+    if (name === "sicop_cr") return true;          // siempre
+    if (name === "bid")  return [1, 3, 5].includes(dow); // lun, mié, vie
+    if (name === "undp") return [2, 4, 6].includes(dow); // mar, jue, sáb
+    return true; // fuentes futuras: corren siempre por defecto
+  });
+}
+
+async function runPipeline(env: Env, allSources = false): Promise<Record<string, unknown>> {
   const storage = new Storage(env.DB);
   const include = new Set(
     env.RELEVANT_CATEGORIES.split(",").map((s) => s.trim()).filter(Boolean)
@@ -227,7 +248,8 @@ async function runPipeline(env: Env): Promise<Record<string, unknown>> {
   const perSource: Record<string, unknown> = {};
   let totalRelevant = 0;
 
-  for (const { name, fn, enrich } of FETCHERS) {
+  const fetchers = activeFetchers(allSources);
+  for (const { name, fn, enrich } of fetchers) {
     const startedAt = new Date().toISOString();
     let lics: Licitacion[] = [];
     let error: string | undefined;
@@ -279,6 +301,7 @@ async function runPipeline(env: Env): Promise<Record<string, unknown>> {
 
   return {
     ran_at: new Date().toISOString(),
+    fuentes_activas: fetchers.map((f) => f.name),
     total_relevant: totalRelevant,
     sources: perSource,
   };
