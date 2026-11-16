@@ -4,8 +4,12 @@
 // Sin autenticación (ruta /public/). Devuelve una página estilo Spring:
 //   { content: [...], totalElements, totalPages, numberOfElements, ... }
 //
-// Para el digest diario pedimos los concursos PUBLICADOS en las últimas 48h
-// que siguen EN RECEPCIÓN DE OFERTAS (biddocRcvYn = "Y" ≈ vigentes).
+// Estrategia "lista completa": en vez de solo lo publicado en 48h, buscamos
+// TODOS los concursos abiertos (en recepción de ofertas) cuya descripción
+// coincide con nuestros temas. El filtro `cartelNm` acepta coincidencias
+// parciales e insensibles a mayúsculas, así que un término como "construc"
+// capta construcción, reconstrucción, constructivas, etc. Unimos los
+// resultados de todos los términos y deduplicamos por cartelNo.
 // SICOP es el sistema central obligatorio de CR, así que esto cubre a casi
 // todas las instituciones (municipalidades, MIDEPLAN, IFAM, ICT, INDER, etc.).
 
@@ -19,14 +23,31 @@ const API_URL =
 const DETAIL_URL =
   "https://prod-api.sicop.go.cr/bid/api/v1/public/epCartel/findPublishedById";
 
-const MAX_ENRICH = 40; // tope de llamadas de detalle por corrida (límite de subrequests)
-const ENRICH_DELAY_MS = 350;
+const MAX_ENRICH = 40; // tope de enriquecimientos NUEVOS por corrida
+const ENRICH_DELAY_MS = 300;
 
-const PAGE_SIZE = 30; // confirmado OK; >50 puede dar 422
-const MAX_PAGES = 25; // tope de seguridad
-const LOOKBACK_DAYS = 2; // publicados en las últimas ~48h
-const PAGE_DELAY_MS = 500; // espaciar requests: evita el rate-limit (422)
+const PAGE_SIZE = 30; // máximo que acepta la API (>30 da 422)
+const WINDOW_DAYS = 60; // ventana de publicación para el universo de "abiertos"
+const TERM_DELAY_MS = 250; // espaciar búsquedas: evita rate-limit (422)
 const REQ_TIMEOUT_MS = 25_000;
+
+// Términos de búsqueda (substrings) que cubren las categorías de interés.
+// Alta cobertura; el clasificador luego descarta falsos positivos
+// (p.ej. "urban" que pegue en un evento cultural).
+const SEARCH_TERMS: string[] = [
+  // urbanismo
+  "plan regulador", "ordenamiento territorial", "catastro", "urban",
+  "espacio public", "patrimonio arquitect", "parque",
+  // ambiental
+  "ambient", "hidrolog", "cuenca", "biodivers",
+  // residuos
+  "residu", "valorizab", "reciclaj",
+  // agua y saneamiento
+  "agua", "alcantarill", "acueducto", "saneamiento", "pluvial", "riego",
+  // obra pública
+  "construc", "remodelac", "vial", "carretera", "pavimen", "edificio",
+  "aeropuerto", "puente",
+];
 
 // La página pública de consulta de concursos (no hay deep-link por cartel:
 // el detalle lo arma el front con el nº de procedimiento).
@@ -56,62 +77,56 @@ interface SpPage {
   numberOfElements?: number;
 }
 
-export async function fetchSicopCr(env: FetcherEnv): Promise<Licitacion[]> {
+export async function fetchSicopCr(_env: FetcherEnv): Promise<Licitacion[]> {
   const today = new Date();
-  const from = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000);
-  // La API rechaza rangos de fecha muy amplios (422). 180 días a futuro cubre
-  // de sobra las aperturas de concursos vigentes y queda dentro del límite.
-  const openTo = new Date(Date.now() + 180 * 86_400_000);
+  const from = new Date(Date.now() - WINDOW_DAYS * 86_400_000);
+  // Ventana de apertura amplia pero dentro del límite de rango de la API.
+  const openTo = new Date(Date.now() + 170 * 86_400_000);
+  const dateFilters = [
+    { field: "openbidDtFrom", value: crDate(from) },
+    { field: "openbidDtTo", value: crDate(openTo) },
+    { field: "proceType", value: "Todos" },
+    { field: "biddocRcvYn", value: "Y" }, // en recepción de ofertas (abiertos)
+    { field: "regDtFrom", value: crDate(from) },
+    { field: "regDtTo", value: crDate(today) },
+  ];
 
-  const out: Licitacion[] = [];
-  const seen = new Set<string>();
+  const byId = new Map<string, Licitacion>();
+  let okCount = 0;
+  let lastError: string | null = null;
 
-  for (let page = 0; page < MAX_PAGES; page++) {
+  for (const term of SEARCH_TERMS) {
     const body = {
-      pageNumber: page,
+      pageNumber: 0,
       pageSize: PAGE_SIZE,
       tableSorter: { sorter: "regDt", order: "desc" },
       tableFilters: [],
-      formFilters: [
-        { field: "openbidDtFrom", value: crDate(from) },
-        { field: "openbidDtTo", value: crDate(openTo) },
-        { field: "proceType", value: "Todos" },
-        { field: "biddocRcvYn", value: "Y" }, // en recepción de ofertas
-        { field: "regDtFrom", value: crDate(from) }, // publicados desde
-        { field: "regDtTo", value: crDate(today) },
-      ],
+      formFilters: [...dateFilters, { field: "cartelNm", value: term }],
     };
 
-    let data: SpPage;
     try {
-      data = await postJson(API_URL, body);
-    } catch (e) {
-      const msg = `sicop_cr page ${page}: ${(e as Error).message}`;
-      console.warn(msg);
-      // Si falla la PRIMERA página, es un fallo real (API nos rechaza, red, etc.):
-      // lo propagamos para que quede visible en runs.json. Si falla una página
-      // posterior, conservamos lo ya traído y cortamos.
-      if (page === 0) throw new Error(msg);
-      break;
-    }
-
-    const items = data.content ?? [];
-    if (items.length === 0) break;
-
-    for (const c of items) {
-      const lic = cartelToLicitacion(c);
-      if (lic && lic.source_id && !seen.has(lic.source_id)) {
-        seen.add(lic.source_id);
-        out.push(lic);
+      const data = await postJson<SpPage>(API_URL, body);
+      okCount++;
+      for (const c of data.content ?? []) {
+        const lic = cartelToLicitacion(c);
+        if (lic && lic.source_id && !byId.has(lic.source_id)) {
+          byId.set(lic.source_id, lic);
+        }
       }
+    } catch (e) {
+      lastError = (e as Error).message;
+      console.warn(`sicop_cr term "${term}": ${lastError}`);
     }
-
-    const totalPages = data.totalPages ?? 1;
-    if (page + 1 >= totalPages) break;
-    await sleep(PAGE_DELAY_MS);
+    await sleep(TERM_DELAY_MS);
   }
 
-  return out;
+  // Si NINGUNA búsqueda funcionó, es un fallo real (API caída / nos rechaza):
+  // lo propagamos para que se vea en runs.json en vez de un 0 silencioso.
+  if (okCount === 0 && lastError) {
+    throw new Error(`sicop_cr: todas las búsquedas fallaron — ${lastError}`);
+  }
+
+  return [...byId.values()];
 }
 
 // Datos enriquecidos que guardamos dentro de `raw._enriched`.

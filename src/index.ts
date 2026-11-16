@@ -12,7 +12,7 @@
 import { classify, filterRelevant } from "./classifier";
 import { renderDigest } from "./digest";
 import { FETCHERS } from "./fetchers";
-import type { Licitacion } from "./schema";
+import { dedupeKey, type Licitacion } from "./schema";
 import { Storage } from "./storage";
 
 export interface Env {
@@ -108,10 +108,14 @@ async function runPipeline(env: Env): Promise<Record<string, unknown>> {
     const relevant = filterRelevant(classified, include.size > 0 ? include : null);
     totalRelevant += relevant.length;
 
-    // Enriquecer los relevantes con datos de detalle (si la fuente lo soporta)
+    // Enriquecer con datos de detalle SOLO los que aún no tienen detalle
+    // guardado (nuevos). Así la 1ª corrida llena el backlog y las siguientes
+    // solo tocan lo nuevo, sin repetir llamadas caras.
     if (enrich && relevant.length > 0) {
       try {
-        await enrich(relevant, env);
+        const already = await storage.enrichedKeys(relevant.map(dedupeKey));
+        const toEnrich = relevant.filter((l) => !already.has(dedupeKey(l)));
+        if (toEnrich.length > 0) await enrich(toEnrich, env);
       } catch (e) {
         console.error(`enrich ${name} failed:`, (e as Error).message);
       }

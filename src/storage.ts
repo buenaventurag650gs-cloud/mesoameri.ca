@@ -21,9 +21,9 @@ export class Storage {
 
       // Ver si existe para decidir verdict
       const existing = await this.db
-        .prepare("SELECT status, close_date FROM licitaciones WHERE dedupe_key = ?")
+        .prepare("SELECT status, close_date, raw FROM licitaciones WHERE dedupe_key = ?")
         .bind(key)
-        .first<{ status: string; close_date: string | null }>();
+        .first<{ status: string; close_date: string | null; raw: string | null }>();
 
       let verdict: keyof UpsertCounts;
       if (!existing) {
@@ -35,6 +35,25 @@ export class Storage {
         verdict = "unchanged";
       } else {
         verdict = "updated";
+      }
+
+      // Preservar el detalle enriquecido (raw._enriched) si esta corrida no lo
+      // trae pero ya estaba guardado — así no se pierde al refrescar un concurso
+      // que quedó fuera del tope de enriquecimiento de esta corrida.
+      let rawToStore: unknown = lic.raw;
+      if (existing?.raw) {
+        try {
+          const oldRaw = JSON.parse(existing.raw) as Record<string, unknown> | null;
+          const newRaw =
+            lic.raw && typeof lic.raw === "object"
+              ? (lic.raw as Record<string, unknown>)
+              : null;
+          if (oldRaw && oldRaw._enriched && !(newRaw && newRaw._enriched)) {
+            rawToStore = { ...(newRaw ?? {}), _enriched: oldRaw._enriched };
+          }
+        } catch {
+          /* raw viejo corrupto: lo ignoramos */
+        }
       }
 
       await this.db
@@ -60,7 +79,7 @@ export class Storage {
           lic.source_url,
           JSON.stringify(lic.categories),
           JSON.stringify(lic.keywords_hit),
-          JSON.stringify(lic.raw),
+          JSON.stringify(rawToStore),
           now, now,
         )
         .run();
@@ -80,6 +99,24 @@ export class Storage {
         );
     const { results } = await stmt.all<D1Row>();
     return results.map(rowToLicitacion);
+  }
+
+  // De las claves dadas, cuáles ya tienen detalle enriquecido guardado
+  // (raw contiene "_enriched"). Sirve para no re-enriquecer en cada corrida.
+  async enrichedKeys(keys: string[]): Promise<Set<string>> {
+    const out = new Set<string>();
+    if (keys.length === 0) return out;
+    const placeholders = keys.map(() => "?").join(",");
+    const { results } = await this.db
+      .prepare(
+        `SELECT dedupe_key, raw FROM licitaciones WHERE dedupe_key IN (${placeholders})`
+      )
+      .bind(...keys)
+      .all<{ dedupe_key: string; raw: string | null }>();
+    for (const r of results) {
+      if (r.raw && r.raw.includes('"_enriched"')) out.add(r.dedupe_key);
+    }
+    return out;
   }
 
   async seenSince(isoTs: string): Promise<Set<string>> {
