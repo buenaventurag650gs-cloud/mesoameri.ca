@@ -123,7 +123,7 @@ function itemToLicitacion(
     publish_date: tag(item, "dc:date").slice(0, 10) || null,
     close_date: deadlineRaw ? `${deadline}T23:59:00-06:00` : null,
     source_url: link,
-    raw: { ref, area, deadline: deadlineRaw, pais },
+    raw: { ref, area, deadline: deadlineRaw, pais, agencia, sigla },
   });
 }
 

@@ -72,6 +72,28 @@ function getProcNo(l: Licitacion): string {
   return m ? m[1] : "";
 }
 
+// Etiqueta corta de la fuente, para mostrar en cada tarjeta y filtrar.
+// SICOP/BID son fijos; el PNUD cubre varias agencias ONU, así que lo
+// leemos del raw si viene (UNICEF, UNOPS, PNUD…).
+function getSourceLabel(l: Licitacion): string {
+  if (l.source === "sicop_cr") return "SICOP";
+  if (l.source === "bid") return "BID";
+  if (l.source === "undp") {
+    const raw = l.raw as Record<string, unknown> | null;
+    const ag = raw && typeof raw.agencia === "string" ? raw.agencia : "";
+    return ag || "ONU";
+  }
+  return l.source.toUpperCase();
+}
+
+// Clase CSS por fuente, para colorear la etiqueta.
+function getSourceClass(l: Licitacion): string {
+  if (l.source === "sicop_cr") return "src-sicop";
+  if (l.source === "bid") return "src-bid";
+  if (l.source === "undp") return "src-un";
+  return "src-x";
+}
+
 // Enlace a NUESTRA página de detalle consolidada (solo para SICOP/CR, que
 // tiene cartelSeq). Para otras fuentes usamos el source_url directo.
 function detailHref(l: Licitacion): string {
@@ -154,6 +176,12 @@ const STYLE = `
   .closebadge.soon   { background: #fef3d7; color: #9a6a00; }
   .closebadge.ok     { background: #eef3fb; color: #2a4a73; }
   .closebadge.past   { background: #eceff3; color: #64748b; }
+  .srcbadge { border-radius: 4px; padding: 2px 7px; font-size: 10.5px; font-weight: 700;
+              letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
+  .srcbadge.src-sicop { background: #e4edf7; color: #083d73; }
+  .srcbadge.src-bid   { background: #e8f1e4; color: #2d5e1b; }
+  .srcbadge.src-un    { background: #e4f0f7; color: #175a8a; }
+  .srcbadge.src-x     { background: #eceff3; color: #475569; }
   .star { border: none; background: none; cursor: pointer; font-size: 18px; line-height: 1;
           color: #c4ccd8; padding: 0 2px; }
   .star.on { color: #f1b400; }
@@ -210,8 +238,12 @@ function card(l: Licitacion, isNew: boolean): string {
   const procNo = getProcNo(l);
   const montoStr = e ? money(e.montoCRC ?? null, e.montoUSD ?? null) : "";
   const badge = closeBadge(l.close_date);
+  const srcLabel = getSourceLabel(l);
+  const srcClass = getSourceClass(l);
 
-  const tags = l.categories.map((c) => `<span class="tag">${esc(c)}</span>`).join("");
+  const srcTag = `<span class="srcbadge ${srcClass}">${esc(srcLabel)}</span>`;
+  const catTags = l.categories.map((c) => `<span class="tag">${esc(c)}</span>`).join("");
+  const tags = srcTag + catTags;
 
   const facts: string[] = [];
   const addFact = (k: string, v: string) => {
@@ -240,13 +272,14 @@ function card(l: Licitacion, isNew: boolean): string {
   const dataClose = esc(l.close_date ?? "");
   const dataInst = esc(l.entity.toLowerCase());
   const dataClasif = esc(e?.clasificacion ?? "");
+  const dataSrc = esc(l.source);
   const favId = esc(l.source_id);
 
   return (
     `<article class="card ${isNew ? "new" : ""}"` +
     ` data-cats="${dataCats}" data-text="${dataText}"` +
     ` data-new="${isNew ? 1 : 0}" data-monto="${dataMonto}" data-close="${dataClose}"` +
-    ` data-inst="${dataInst}" data-clasif="${dataClasif}" data-id="${favId}">` +
+    ` data-inst="${dataInst}" data-clasif="${dataClasif}" data-src="${dataSrc}" data-id="${favId}">` +
     `<div class="card-top"><div class="tags">${tags}</div>` +
     `<div class="toprt">${badgeBlock}` +
     `<button class="star" data-fav="${favId}" title="Guardar" aria-label="Guardar">☆</button>` +
@@ -342,6 +375,17 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     `<option value="">Toda clasificación</option>` +
     [...clasifSet].sort().map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join("");
 
+  // Fuentes presentes (SICOP, BID, UNDP) con su conteo
+  const srcCounts = new Map<string, number>();
+  for (const l of lics) srcCounts.set(l.source, (srcCounts.get(l.source) ?? 0) + 1);
+  const SRC_LABEL: Record<string, string> = { sicop_cr: "SICOP", bid: "BID", undp: "ONU (PNUD y otras)" };
+  const srcOptions =
+    `<option value="">Todas las fuentes</option>` +
+    [...srcCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([s, n]) => `<option value="${esc(s)}">${esc(SRC_LABEL[s] ?? s)} (${n})</option>`)
+      .join("");
+
   const filters = sections.length
     ? `<div class="filters">
          <div class="row">
@@ -354,6 +398,7 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
          </div>
          <div class="chips">${chips}</div>
          <div class="selects">
+           <select id="src">${srcOptions}</select>
            <select id="inst">${instOptions}</select>
            <select id="clasif">${clasifOptions}</select>
          </div>
@@ -406,6 +451,7 @@ const FILTER_SCRIPT = `<script>
   var sortSel = document.getElementById('sort');
   var instSel = document.getElementById('inst');
   var clasifSel = document.getElementById('clasif');
+  var srcSel = document.getElementById('src');
   var catChips = Array.prototype.slice.call(document.querySelectorAll('.chip[data-cat]'));
   var favChip = document.getElementById('favchip');
   var muniChip = document.getElementById('munichip');
@@ -450,6 +496,7 @@ const FILTER_SCRIPT = `<script>
   function apply(){
     var term = (q.value||'').toLowerCase().trim();
     var inst = instSel.value, clasif = clasifSel.value;
+    var src = srcSel ? srcSel.value : '';
     var nCats = activeCount();
     var visible = 0;
     for (var i=0;i<cards.length;i++){
@@ -460,9 +507,10 @@ const FILTER_SCRIPT = `<script>
       var matchText = !term || (c.dataset.text||'').indexOf(term)>=0;
       var matchInst = !inst || (c.dataset.inst||'')===inst;
       var matchClasif = !clasif || (c.dataset.clasif||'')===clasif;
+      var matchSrc = !src || (c.dataset.src||'')===src;
       var matchFav = !favOnly || isFav(c.dataset.id);
       var matchMuni = !muniOnly || (c.dataset.inst||'').indexOf('municipalidad') === 0;
-      var show = matchCat && matchText && matchInst && matchClasif && matchFav && matchMuni;
+      var show = matchCat && matchText && matchInst && matchClasif && matchSrc && matchFav && matchMuni;
       c.style.display = show ? '' : 'none';
       if (show) visible++;
     }
@@ -507,6 +555,7 @@ const FILTER_SCRIPT = `<script>
   sortSel.addEventListener('change', apply);
   instSel.addEventListener('change', apply);
   clasifSel.addEventListener('change', apply);
+  if (srcSel) srcSel.addEventListener('change', apply);
   paintStars();
   apply();
 })();
