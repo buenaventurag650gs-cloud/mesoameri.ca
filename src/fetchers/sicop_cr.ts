@@ -163,7 +163,9 @@ export async function enrichSicopCr(
     const cartelNo = lic.source_id;
     const rawRec = (lic.raw ?? {}) as SpCartel;
     const cartelSeq = rawRec.cartelSeq ?? "00";
-    if (!cartelNo) continue;
+    // El cartelNo real de SICOP es numérico (ej. 20261101334). Si no lo es,
+    // no es un concurso real (datos de muestra) y la API devolvería 400.
+    if (!cartelNo || !/^\d+$/.test(cartelNo)) continue;
 
     stats.attempted++;
     try {

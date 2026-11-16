@@ -83,6 +83,15 @@ export default {
       return jsonResponse(result);
     }
 
+    // --- Admin: borrar los 7 datos de muestra sembrados al inicio ---
+    if (url.pathname === "/admin/cleanup-samples" && request.method === "POST") {
+      if (!env.ADMIN_TOKEN || request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const borrados = await storage.deleteKeys(SAMPLE_KEYS);
+      return jsonResponse({ borrados, claves: SAMPLE_KEYS.length });
+    }
+
     // --- Admin: enviar el correo del digest (prueba manual) ---
     if (url.pathname === "/admin/email" && request.method === "POST") {
       if (!env.ADMIN_TOKEN || request.headers.get("x-admin-token") !== env.ADMIN_TOKEN) {
@@ -140,6 +149,18 @@ export default {
     }
   },
 };
+
+// Los 7 registros de demo que sembramos a mano al montar la base. Sus números
+// de SICOP son inventados, así que no se pueden enriquecer ni abrir.
+const SAMPLE_KEYS = [
+  "sicop_cr:2026LD-000096-0004200001",
+  "sicop_cr:2026LD-000353-0000900001",
+  "sicop_cr:2026LD-000016-0003000001",
+  "sicop_cr:2026LY-000002-0021800611",
+  "ungm:UNDP-SLV-00593",
+  "ungm:LPI-044-2026",
+  "ungm:UNDP-SLV-00587",
+];
 
 // ----- completar detalle pendiente (cron cada 2h y /admin/enrich) -----
 // Corre SIN búsquedas, así todo el presupuesto de llamadas va al detalle.

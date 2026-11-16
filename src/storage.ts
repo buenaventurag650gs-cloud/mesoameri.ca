@@ -117,6 +117,21 @@ export class Storage {
     return results.map(rowToLicitacion);
   }
 
+  // Borra registros por clave exacta. Devuelve cuántos había.
+  async deleteKeys(keys: string[]): Promise<number> {
+    if (keys.length === 0) return 0;
+    const ph = keys.map(() => "?").join(",");
+    const before = await this.db
+      .prepare(`SELECT COUNT(*) AS n FROM licitaciones WHERE dedupe_key IN (${ph})`)
+      .bind(...keys)
+      .first<{ n: number }>();
+    await this.db
+      .prepare(`DELETE FROM licitaciones WHERE dedupe_key IN (${ph})`)
+      .bind(...keys)
+      .run();
+    return before?.n ?? 0;
+  }
+
   // Guarda el raw enriquecido (y completa close_date si venía nulo).
   async updateRaw(key: string, raw: unknown, closeDate: string | null): Promise<void> {
     await this.db
