@@ -7,10 +7,30 @@ import { COUNTRIES, dedupeKey, type Licitacion } from "./schema";
 const CAT_LABEL: Record<string, string> = {
   urbanismo: "Urbanismo",
   ambiental: "Ambiental",
-  residuos: "Residuos",
-  "agua-saneamiento": "Agua y saneamiento",
   "obra-publica": "Obra pública",
 };
+
+// Agrupación de categorías para la UI: residuos y agua-saneamiento se muestran
+// y filtran bajo "ambiental". El clasificador sigue guardando la categoría
+// granular en los datos; esto solo afecta cómo se agrupa de cara al usuario.
+const CAT_GROUP: Record<string, string> = {
+  residuos: "ambiental",
+  "agua-saneamiento": "ambiental",
+};
+function groupCat(c: string): string {
+  return CAT_GROUP[c] ?? c;
+}
+
+// Bandera del país (imagen, se ve igual en todos los sistemas incluido Windows).
+// MULTI y desconocidos usan un globo.
+function flagImg(iso: string): string {
+  if (!/^[A-Za-z]{2}$/.test(iso)) return `<span class="flag flag-globe" aria-hidden="true">🌎</span>`;
+  const cc = iso.toLowerCase();
+  return (
+    `<img class="flag" src="https://flagcdn.com/24x18/${cc}.png"` +
+    ` srcset="https://flagcdn.com/48x36/${cc}.png 2x" width="24" height="18" alt="" loading="lazy">`
+  );
+}
 
 function esc(s: string | null | undefined): string {
   return (s ?? "").replace(/[&<>"']/g, (c) =>
@@ -135,6 +155,9 @@ const STYLE = `
     --chip:#eef3fb; --chip-ink:#2a4a73; --ok:#0f7b4f;
   }
   .ico { width: 1em; height: 1em; flex: 0 0 auto; vertical-align: -0.12em; }
+  .flag { width: 20px; height: 15px; border-radius: 2px; vertical-align: -2px; margin-right: 8px;
+          box-shadow: 0 0 0 1px rgba(16,24,40,.08); object-fit: cover; }
+  .flag-globe { font-size: 15px; margin-right: 6px; box-shadow: none; }
   * { box-sizing: border-box; }
   body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
          color: var(--ink); background: var(--bg); margin: 0; padding: 0 16px 48px;
@@ -323,7 +346,11 @@ function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
   const srcClass = getSourceClass(l);
 
   const srcTag = `<span class="srcbadge ${srcClass}">${esc(srcLabel)}</span>`;
-  const catTags = l.categories.map((c) => `<span class="tag">${esc(c)}</span>`).join("");
+  // Categorías agrupadas para mostrar (sin duplicados), con su etiqueta legible.
+  const catGroups = [...new Set(l.categories.map(groupCat))].filter((c) => CAT_LABEL[c]);
+  const catTags = catGroups
+    .map((c) => `<span class="tag">${esc(CAT_LABEL[c])}</span>`)
+    .join("");
   const tags = srcTag + catTags;
 
   const facts: string[] = [];
@@ -348,7 +375,8 @@ function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
 
   // Atributos para filtrar/ordenar en el navegador
   const dataText = esc(`${l.title} ${l.entity} ${procNo}`.toLowerCase());
-  const dataCats = esc(l.categories.join(" "));
+  // Categorías agrupadas: una tarjeta de agua-saneamiento matchea el chip "ambiental".
+  const dataCats = esc([...new Set(l.categories.map(groupCat))].join(" "));
   const dataMonto = e ? (e.montoUSD && e.montoUSD > 0 ? e.montoUSD * 520 : e.montoCRC ?? 0) : 0;
   const dataClose = esc(l.close_date ?? "");
   const dataInst = esc(l.entity.toLowerCase());
@@ -427,12 +455,12 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
   const nuevas = lics.filter((l) => newKeys.has(dedupeKey(l))).length;
   const esta_semana = lics.filter((l) => weekKeys.has(dedupeKey(l))).length;
 
-  // Conteo por categoría (solo las de interés) para los chips.
+  // Conteo por categoría agrupada para los chips (una tarjeta cuenta una vez
+  // por grupo, aunque tenga residuos y agua-saneamiento a la vez).
   const catCounts = new Map<string, number>();
   for (const l of lics) {
-    for (const c of l.categories) {
-      if (CAT_LABEL[c]) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
-    }
+    const groups = new Set(l.categories.map(groupCat).filter((c) => CAT_LABEL[c]));
+    for (const g of groups) catCounts.set(g, (catCounts.get(g) ?? 0) + 1);
   }
 
   const sections: string[] = [];
@@ -452,7 +480,7 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
       : "";
     sections.push(
       `<section class="section">` +
-      `<div class="country">${esc(COUNTRIES[country] ?? country)} · ` +
+      `<div class="country">${flagImg(country)}${esc(COUNTRIES[country] ?? country)} · ` +
       `<span class="secn">${items.length}</span>${nuevasBadge}</div>` +
       `<div class="grid">${cards}</div></section>`
     );
@@ -462,8 +490,9 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     ? sections.join("")
     : `<div class="empty">Sin concursos vigentes por ahora. El sistema se actualiza todos los días.</div>`;
 
-  // Chips de categoría (+ favoritos)
-  const chipOrder = ["urbanismo", "ambiental", "residuos", "agua-saneamiento", "obra-publica"];
+  // Chips de categoría (+ Esta semana + Guardados). Todos los chips son
+  // exclusivos entre sí excepto Guardados, que se puede sumar a cualquiera.
+  const chipOrder = ["urbanismo", "ambiental", "obra-publica"];
   const chips =
     `<button class="chip on" data-cat="">Todas</button>` +
     chipOrder
@@ -474,10 +503,6 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
           `<span class="n">${catCounts.get(c)}</span></button>`
       )
       .join("") +
-    (lics.filter((l) => /^municipalidad/i.test(l.entity.trim())).length
-      ? `<button class="chip" id="munichip">Municipalidades<span class="n">` +
-        `${lics.filter((l) => /^municipalidad/i.test(l.entity.trim())).length}</span></button>`
-      : "") +
     (esta_semana
       ? `<button class="chip" id="weekchip">Esta semana<span class="n">${esta_semana}</span></button>`
       : "") +
@@ -543,7 +568,7 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     }
   );
   const countryLinks = countriesWithData
-    .map((c) => `<a href="/?country=${esc(c)}">${esc(COUNTRIES[c] ?? c)}</a>`)
+    .map((c) => `<a href="/?country=${esc(c)}">${flagImg(c)}${esc(COUNTRIES[c] ?? c)}</a>`)
     .join("\n         ");
 
   // El CSV y el JSON respetan el país actual (si la vista está filtrada).
@@ -584,14 +609,15 @@ const FILTER_SCRIPT = `<script>
   var srcSel = document.getElementById('src');
   var catChips = Array.prototype.slice.call(document.querySelectorAll('.chip[data-cat]'));
   var favChip = document.getElementById('favchip');
-  var muniChip = document.getElementById('munichip');
   var weekChip = document.getElementById('weekchip');
   var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
-  var active = {};
-  var favOnly = false;
-  var muniOnly = false;
-  var weekOnly = false;
   var allChip = document.querySelector('.chip[data-cat=""]');
+  // Chips exclusivos: categorías + "Esta semana"; solo uno activo a la vez.
+  // Guardados (favOnly) es independiente y se suma a cualquiera.
+  var exChips = catChips.slice();
+  if (weekChip) exChips.push(weekChip);
+  var sel = '';        // '' = Todas; slug de categoría; o '__week__'
+  var favOnly = false;
 
   var FKEY='meso_fav';
   function loadFavs(){ try{ return JSON.parse(localStorage.getItem(FKEY)||'[]'); }catch(e){ return []; } }
@@ -605,8 +631,6 @@ const FILTER_SCRIPT = `<script>
       if(isFav(id)){ stars[i].classList.add('on'); stars[i].textContent='★'; }
       else { stars[i].classList.remove('on'); stars[i].textContent='☆'; } }
   }
-
-  function activeCount(){ return Object.keys(active).length; }
 
   function sortGrids(mode){
     var grids = document.querySelectorAll('.grid');
@@ -629,21 +653,20 @@ const FILTER_SCRIPT = `<script>
     var term = (q.value||'').toLowerCase().trim();
     var inst = instSel.value, clasif = clasifSel.value;
     var src = srcSel ? srcSel.value : '';
-    var nCats = activeCount();
+    var catSel = (sel && sel !== '__week__') ? sel : '';
+    var weekSel = sel === '__week__';
     var visible = 0;
     for (var i=0;i<cards.length;i++){
       var c = cards[i];
       var cats = (c.dataset.cats||'').split(' ');
-      var matchCat = nCats===0;
-      if (!matchCat){ for (var k=0;k<cats.length;k++){ if (active[cats[k]]){ matchCat=true; break; } } }
+      var matchCat = !catSel || cats.indexOf(catSel) >= 0;
       var matchText = !term || (c.dataset.text||'').indexOf(term)>=0;
       var matchInst = !inst || (c.dataset.inst||'')===inst;
       var matchClasif = !clasif || (c.dataset.clasif||'')===clasif;
       var matchSrc = !src || (c.dataset.src||'')===src;
       var matchFav = !favOnly || isFav(c.dataset.id);
-      var matchMuni = !muniOnly || (c.dataset.inst||'').indexOf('municipalidad') === 0;
-      var matchWeek = !weekOnly || c.dataset.week==='1';
-      var show = matchCat && matchText && matchInst && matchClasif && matchSrc && matchFav && matchMuni && matchWeek;
+      var matchWeek = !weekSel || c.dataset.week==='1';
+      var show = matchCat && matchText && matchInst && matchClasif && matchSrc && matchFav && matchWeek;
       c.style.display = show ? '' : 'none';
       if (show) visible++;
     }
@@ -658,27 +681,21 @@ const FILTER_SCRIPT = `<script>
     document.getElementById('noresults').style.display = visible ? 'none' : 'block';
   }
 
+  // Selección exclusiva: activa un chip y apaga los demás del grupo.
+  // Volver a hacer clic en el activo regresa a "Todas".
+  function setSel(v, chip){
+    sel = (sel === v && v !== '') ? '' : v;
+    exChips.forEach(function(x){ x.classList.remove('on'); });
+    if (sel === '') { allChip.classList.add('on'); }
+    else { chip.classList.add('on'); }
+    apply();
+  }
   catChips.forEach(function(ch){
-    ch.addEventListener('click', function(){
-      var cat = ch.dataset.cat;
-      if (cat===''){ active={}; catChips.forEach(function(x){x.classList.remove('on');}); allChip.classList.add('on'); }
-      else {
-        allChip.classList.remove('on');
-        if (active[cat]){ delete active[cat]; ch.classList.remove('on'); }
-        else { active[cat]=true; ch.classList.add('on'); }
-        if (activeCount()===0) allChip.classList.add('on');
-      }
-      apply();
-    });
+    ch.addEventListener('click', function(){ setSel(ch.dataset.cat, ch); });
   });
+  if (weekChip) weekChip.addEventListener('click', function(){ setSel('__week__', weekChip); });
   if (favChip) favChip.addEventListener('click', function(){
     favOnly = !favOnly; favChip.classList.toggle('on', favOnly); apply();
-  });
-  if (muniChip) muniChip.addEventListener('click', function(){
-    muniOnly = !muniOnly; muniChip.classList.toggle('on', muniOnly); apply();
-  });
-  if (weekChip) weekChip.addEventListener('click', function(){
-    weekOnly = !weekOnly; weekChip.classList.toggle('on', weekOnly); apply();
   });
   document.addEventListener('click', function(ev){
     var t = ev.target;
