@@ -96,6 +96,7 @@ function getProcNo(l: Licitacion): string {
 function getSourceLabel(l: Licitacion): string {
   if (l.source === "sicop_cr") return "SICOP";
   if (l.source === "bid") return "BID";
+  if (l.source === "world_bank") return "Banco Mundial";
   if (l.source === "undp") {
     const raw = l.raw as Record<string, unknown> | null;
     const ag = raw && typeof raw.agencia === "string" ? raw.agencia : "";
@@ -108,6 +109,7 @@ function getSourceLabel(l: Licitacion): string {
 function getSourceClass(l: Licitacion): string {
   if (l.source === "sicop_cr") return "src-sicop";
   if (l.source === "bid") return "src-bid";
+  if (l.source === "world_bank") return "src-wb";
   if (l.source === "undp") return "src-un";
   return "src-x";
 }
@@ -214,6 +216,7 @@ const STYLE = `
               letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
   .srcbadge.src-sicop { background: #e4edf7; color: #083d73; }
   .srcbadge.src-bid   { background: #e8f1e4; color: #2d5e1b; }
+  .srcbadge.src-wb    { background: #efe7f7; color: #5a3a86; }
   .srcbadge.src-un    { background: #e4f0f7; color: #175a8a; }
   .srcbadge.src-x     { background: #eceff3; color: #475569; }
   .star { border: none; background: none; cursor: pointer; font-size: 18px; line-height: 1;
@@ -296,6 +299,15 @@ function nonSicopFacts(l: Licitacion): Array<[string, string]> {
     if (agencia) out.push(["Agencia", agencia]);
     const area = str(raw.area);
     if (area && area !== "OTHER") out.push(["Área", area]);
+    const ref = str(raw.ref);
+    if (ref) out.push(["Referencia", ref]);
+  } else if (l.source === "world_bank") {
+    const tipo = str(raw.tipo);
+    if (tipo) out.push(["Tipo", tipo]);
+    const metodo = str(raw.metodo);
+    if (metodo) out.push(["Método", metodo]);
+    const proyecto = str(raw.proyecto);
+    if (proyecto) out.push(["Proyecto", proyecto]);
     const ref = str(raw.ref);
     if (ref) out.push(["Referencia", ref]);
   }
