@@ -46,6 +46,7 @@ const ICON_PATHS: Record<string, string> = {
   calendar: '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M16 3v4M8 3v4M4 11h16"/>',
   hash: '<path d="M5 9h14M5 15h14M11 4 9 20M15 4l-2 16"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
+  download: '<path d="M12 3v12M7 11l5 5 5-5M5 21h14"/>',
 };
 function icon(name: string): string {
   const p = ICON_PATHS[name];
@@ -200,7 +201,7 @@ const STYLE = `
            border-top: 1px solid var(--line); padding-top: 12px; }
   .fact .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
   .fact .v { font-weight: 600; }
-  .detail-foot { margin-top: 12px; }
+  .detail-foot { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
   .foot { display: flex; justify-content: space-between; align-items: center; gap: 10px;
           border-top: 1px solid var(--line); padding-top: 10px; }
   .procno { display: inline-flex; align-items: center; gap: 4px; min-width: 0;
@@ -214,6 +215,9 @@ const STYLE = `
   .btn { background: var(--brand); color: #fff; text-decoration: none; padding: 7px 14px;
          border-radius: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; display: inline-block; }
   .btn:hover { background: var(--brand-ink); }
+  .btn-ghost { background: #fff; color: var(--brand-ink); border: 1px solid var(--line);
+               display: inline-flex; align-items: center; gap: 5px; }
+  .btn-ghost:hover { background: #fff; border-color: var(--brand); color: var(--brand); }
   .empty { background:#fff; border:1px solid var(--line); border-radius:12px; padding:28px; text-align:center; color:var(--muted); }
   /* Barra de filtros */
   .filters { position: sticky; top: 0; z-index: 5; background: var(--bg);
@@ -416,9 +420,23 @@ function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
     `</div>` +
     `<div class="detail">` +
     (facts.length ? `<div class="facts">${facts.join("")}</div>` : "") +
-    `<div class="detail-foot">${detailButton(l)}</div>` +
+    `<div class="detail-foot">${detailButton(l)}${pdfButton(l)}</div>` +
     `</div>` +
     `</article>`
+  );
+}
+
+// Para SICOP (con ficha propia) ofrecemos descargar la "ficha de preparación"
+// como PDF: abre la ficha con ?pdf=1, que dispara la descarga automáticamente.
+function pdfButton(l: Licitacion): string {
+  const internal = l.source === "sicop_cr" && l.source_id && /^\d+$/.test(l.source_id);
+  if (!internal) return "";
+  const raw = l.raw as Record<string, unknown> | null;
+  const seq = raw && typeof raw.cartelSeq === "string" ? raw.cartelSeq : "00";
+  const href = `/cartel?no=${encodeURIComponent(l.source_id!)}&seq=${encodeURIComponent(seq)}&pdf=1`;
+  return (
+    `<a class="btn btn-ghost" href="${esc(href)}" target="_blank" rel="noopener">` +
+    `${icon("download")}Ficha PDF</a>`
   );
 }
 

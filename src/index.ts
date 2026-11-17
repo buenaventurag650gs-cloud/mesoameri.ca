@@ -74,7 +74,8 @@ export default {
       if (url.searchParams.get("debug") === "1") {
         return jsonResponse(await diagnoseCartel(no, seq));
       }
-      const html = await renderCartelDetail(no, seq);
+      const autoPrint = url.searchParams.get("pdf") === "1";
+      const html = await renderCartelDetail(no, seq, autoPrint);
       return new Response(html, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });

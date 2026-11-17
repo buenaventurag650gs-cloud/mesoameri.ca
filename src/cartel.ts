@@ -57,7 +57,11 @@ async function req<T>(url: string, body?: unknown): Promise<T> {
   }
 }
 
-export async function renderCartelDetail(cartelNo: string, cartelSeq: string): Promise<string> {
+export async function renderCartelDetail(
+  cartelNo: string,
+  cartelSeq: string,
+  autoPrint = false
+): Promise<string> {
   // El cartelNo real de SICOP es numérico. Si no lo es, no hay ficha posible.
   if (!/^\d+$/.test(cartelNo)) {
     return errorPage(
@@ -109,7 +113,7 @@ export async function renderCartelDetail(cartelNo: string, cartelSeq: string): P
     })
   );
 
-  return detailPage(h, lines, staff, resolved);
+  return detailPage(h, lines, staff, resolved, autoPrint);
 }
 
 // Diagnóstico: prueba cada endpoint y reporta qué responde desde el Worker.
@@ -212,7 +216,66 @@ function longText(v: unknown, max = 900): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
-function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: ResolvedFile[]): string {
+// Lista de preparación: sintetiza lo que un oferente necesita tener listo,
+// a partir de los datos del pliego. Cada ítem es una casilla para marcar.
+function prepChecklist(h: Dict, files: ResolvedFile[]): string {
+  const items: string[] = [];
+  const add = (label: string, detail = "") => {
+    items.push(
+      `<li><span class="box"></span><span class="pl-t">${esc(label)}` +
+        (detail ? ` <span class="pl-d">— ${esc(detail)}</span>` : "") +
+        `</span></li>`
+    );
+  };
+  const yes = (v: unknown) => /^s[ií]/i.test(str(v));
+
+  const cierre = fmtDt(h.biddocEndDt);
+  if (cierre) add("Presentar la oferta antes del cierre", cierre);
+
+  const aclara = fmtDt(h.explainRcvEndDt);
+  if (yes(h.explainAllowYnNm) && aclara)
+    add("Enviar consultas antes del límite de aclaraciones", aclara);
+
+  const objec = fmtDt(h.opinionEndDt);
+  if (objec) add("Plazo para objeciones al cartel", objec);
+
+  if (yes(h.participationGuarnRcvYnNm)) {
+    const monto = money(num(h.participationGuarnAmt)) || str(h.participationGuarnAmtType);
+    add("Rendir garantía de participación", monto);
+  }
+  if (yes(h.fulfillmentGuarnRcvYnNm)) {
+    const monto = money(num(h.fulfillmentGuarnAmt)) || str(h.fulfillmentGuarnAmtType);
+    add("Prever garantía de cumplimiento (si se adjudica)", monto);
+  }
+
+  const vig = dur(h.biddocValDur, h.biddocValDurTypeNm);
+  if (vig) add("Mantener la oferta vigente", vig);
+
+  const recep = str(h.onlineYnNm);
+  if (recep) add("Modo de recepción de la oferta", recep);
+
+  if (files.length)
+    add(
+      `Revisar y reunir la documentación del pliego`,
+      `${files.length} archivo${files.length === 1 ? "" : "s"} (ver sección Documentos)`
+    );
+
+  if (!items.length) return "";
+  return (
+    `<div class="prep"><div class="prep-h">Lista de preparación</div>` +
+    `<ul class="plist">${items.join("")}</ul>` +
+    `<p class="prep-note">Resumen generado a partir del pliego para ayudarte a prepararte. ` +
+    `Confirmá siempre los detalles en el cartel oficial de SICOP.</p></div>`
+  );
+}
+
+function detailPage(
+  h: Dict,
+  lines: ProdLine[],
+  staff: Staff[],
+  files: ResolvedFile[],
+  autoPrint = false
+): string {
   const title = str(h.cartelNm);
   const inst = str(h.cartelInstNm);
   const procNo = str(h.instCartelNo);
@@ -351,6 +414,14 @@ function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: ResolvedF
   .procno{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--muted);}
   .estado{display:inline-block;margin-top:8px;background:#e9f6ef;color:#0f7b4f;border-radius:999px;
           padding:3px 11px;font-size:12px;font-weight:700;}
+  .prep{margin-top:20px;background:#f3f8ff;border:1px solid #d7e6f7;border-radius:12px;padding:16px 18px;}
+  .prep-h{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand-ink);margin-bottom:10px;}
+  ul.plist{list-style:none;padding:0;margin:0;}
+  ul.plist li{display:flex;align-items:flex-start;gap:9px;padding:5px 0;font-size:14px;}
+  ul.plist .box{flex:0 0 auto;width:15px;height:15px;margin-top:2px;border:1.5px solid var(--brand);border-radius:3px;background:#fff;}
+  .pl-t{font-weight:600;}
+  .pl-d{font-weight:400;color:var(--muted);}
+  .prep-note{color:var(--muted);font-size:12px;margin:10px 0 0;}
   h2{font-size:14px;margin:24px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line);
      text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
   .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px 20px;}
@@ -387,10 +458,17 @@ function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: ResolvedF
     table.lines tfoot td{border-top:1px solid var(--line);}
   }
   @media print{
-    body{background:#fff;padding:0;}
+    body{background:#fff;padding:0;font-size:12px;color:#000;}
     .sheet{border:none;border-radius:0;max-width:none;padding:0;}
-    .actions,.back{display:none;}
+    .actions,.back,.src{display:none;}
     table.lines{min-width:0;}
+    h1{font-size:17px;}
+    h2{margin-top:16px;page-break-after:avoid;}
+    .prep{background:#fff;border:1.5px solid #000;border-radius:0;page-break-inside:avoid;}
+    .prep-h{color:#000;}
+    .facts,.longtext,.prep,ul.docs li,table.lines tr{page-break-inside:avoid;}
+    ul.plist .box{border-color:#000;}
+    a{color:#000;text-decoration:none;}
   }
 </style></head>
 <body><div class="sheet">
@@ -398,13 +476,14 @@ function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: ResolvedF
     <a class="back" href="/?country=CR">← Volver al listado</a>
     <div class="actions">
       <a class="btn" href="${esc(SICOP_SEARCH)}" target="_blank" rel="noopener">Ver en SICOP</a>
-      <button class="btn primary" onclick="window.print()">Imprimir / Guardar PDF</button>
+      <button class="btn primary" onclick="window.print()">Descargar ficha PDF</button>
     </div>
   </div>
   <h1>${esc(title)}</h1>
   <p class="inst">${esc(inst)}</p>
   <p class="procno">${esc(procNo)} · SICOP ${esc(sicopNo)}</p>
   ${estado ? `<span class="estado">${esc(estado)}</span>` : ""}
+  ${prepChecklist(h, files)}
   ${section("Información general", general)}
   ${section("Bien, servicio u obra", linesBlock)}
   ${section("Funcionarios relacionados", funcs)}
@@ -417,7 +496,7 @@ function detailPage(h: Dict, lines: ProdLine[], staff: Staff[], files: ResolvedF
      Para ofertar o descargar documentos, ingresá al expediente en
      <a href="${esc(SICOP_SEARCH)}" target="_blank" rel="noopener">sicop.go.cr</a>
      y buscá el procedimiento <b>${esc(procNo)}</b>.</p>
-</div></body></html>`;
+</div>${autoPrint ? `<script>window.addEventListener('load',function(){setTimeout(function(){window.print();},400);});</script>` : ""}</body></html>`;
 }
 
 function errorPage(msg: string): string {
