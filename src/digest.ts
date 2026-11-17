@@ -18,6 +18,24 @@ function esc(s: string | null | undefined): string {
   );
 }
 
+// Íconos SVG inline (sin dependencias externas). Heredan color y tamaño
+// del texto adyacente via currentColor y width/height en em.
+const ICON_PATHS: Record<string, string> = {
+  building: '<path d="M3 21h18M5 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16M9 7h2M9 11h2M9 15h2"/>',
+  coin: '<circle cx="12" cy="12" r="9"/><path d="M14.5 9a2.6 2 0 0 0-2.5-1.3c-1.5 0-2.6.8-2.6 1.9 0 2.3 5.2 1.2 5.2 3.5 0 1.1-1.1 1.9-2.6 1.9A2.6 2 0 0 1 9.5 15M12 6.3v11.4"/>',
+  calendar: '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M16 3v4M8 3v4M4 11h16"/>',
+  hash: '<path d="M5 9h14M5 15h14M11 4 9 20M15 4l-2 16"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+};
+function icon(name: string): string {
+  const p = ICON_PATHS[name];
+  if (!p) return "";
+  return (
+    `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"` +
+    ` stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`
+  );
+}
+
 // ---- Formateo ----
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -110,10 +128,11 @@ function detailHref(l: Licitacion): string {
 const STYLE = `
 <style>
   :root {
-    --ink:#1a2330; --muted:#64748b; --line:#e5e9f0; --bg:#f7f9fc;
+    --ink:#1a2330; --muted:#5b6b84; --line:#e5e9f0; --bg:#f7f9fc;
     --brand:#0a66c2; --brand-ink:#083d73; --new:#fff8e1; --new-line:#f3d98b;
     --chip:#eef3fb; --chip-ink:#2a4a73; --ok:#0f7b4f;
   }
+  .ico { width: 1em; height: 1em; flex: 0 0 auto; vertical-align: -0.12em; }
   * { box-sizing: border-box; }
   body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
          color: var(--ink); background: var(--bg); margin: 0; padding: 0 16px 48px;
@@ -141,21 +160,34 @@ const STYLE = `
          padding: 2px 8px; font-size: 11.5px; font-weight: 600; }
   .pill-new { background: var(--ok); color: #fff; border-radius: 999px; padding: 2px 9px;
               font-size: 11px; font-weight: 700; white-space: nowrap; }
-  .title { font-size: 15.5px; font-weight: 650; line-height: 1.35; margin: 0; }
-  .entity { color: var(--muted); font-size: 13px; margin: -2px 0 0; }
-  .monto { font-size: 19px; font-weight: 750; color: var(--brand-ink); }
-  .monto .lbl { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase;
-                letter-spacing: .04em; display: block; margin-bottom: -2px; }
+  .head { display: flex; flex-direction: column; gap: 3px; }
+  .title { font-size: 16px; font-weight: 600; line-height: 1.4; margin: 0; overflow-wrap: anywhere; }
+  .entity { color: var(--muted); font-size: 13px; margin: 0; display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .entity .etxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .monto { display: inline-flex; align-items: baseline; gap: 5px; font-size: 20px; font-weight: 700;
+           color: var(--brand-ink); white-space: nowrap; }
+  .monto .ico { align-self: center; }
+  .closeat { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .detail { display: none; }
+  .card.open .detail { display: block; }
   .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; font-size: 13px;
-           border-top: 1px solid var(--line); padding-top: 10px; }
+           border-top: 1px solid var(--line); padding-top: 12px; }
   .fact .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
   .fact .v { font-weight: 600; }
+  .detail-foot { margin-top: 12px; }
   .foot { display: flex; justify-content: space-between; align-items: center; gap: 10px;
-          border-top: 1px solid var(--line); padding-top: 10px; flex-wrap: wrap; }
-  .procno { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted);
-            min-width: 0; }
+          border-top: 1px solid var(--line); padding-top: 10px; }
+  .procno { display: inline-flex; align-items: center; gap: 4px; min-width: 0;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
+  .procno .ptxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vermas { border: none; background: none; color: var(--brand); cursor: pointer; flex: 0 0 auto;
+            display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; padding: 4px 2px; }
+  .vermas:hover { color: var(--brand-ink); }
+  .vermas .ico { transition: transform .15s ease; }
+  .card.open .vermas .ico { transform: rotate(180deg); }
   .btn { background: var(--brand); color: #fff; text-decoration: none; padding: 7px 14px;
-         border-radius: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+         border-radius: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; display: inline-block; }
   .btn:hover { background: var(--brand-ink); }
   .empty { background:#fff; border:1px solid var(--line); border-radius:12px; padding:28px; text-align:center; color:var(--muted); }
   /* Barra de filtros */
@@ -198,7 +230,7 @@ const STYLE = `
     .grid { grid-template-columns: 1fr; gap: 12px; }
     .card { padding: 14px 13px 12px; }
     .facts { grid-template-columns: 1fr; gap: 8px; }
-    .title { font-size: 15px; }
+    .title { font-size: 15.5px; }
     .monto { font-size: 18px; }
     .filters { padding: 10px 0 8px; }
     .filters .row { flex-direction: column; align-items: stretch; }
@@ -206,7 +238,7 @@ const STYLE = `
     .selects { flex-direction: column; }
     .selects select { width: 100%; min-width: 0; }
     .foot { gap: 8px; }
-    .foot .btn { width: 100%; text-align: center; }
+    .detail-foot .btn { width: 100%; text-align: center; }
     .procno { font-size: 11.5px; }
     .nav { gap: 5px; }
     .nav a { padding: 5px 10px; font-size: 12.5px; }
@@ -297,9 +329,7 @@ function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
   if (e?.duracionContrato) addFact("Duración contrato", e.duracionContrato);
   if (e?.contacto) addFact("Contacto", e.contacto);
 
-  const montoBlock = montoStr
-    ? `<div class="monto"><span class="lbl">Presupuesto</span>${esc(montoStr)}</div>`
-    : "";
+  const closeStr = fmtDt(l.close_date);
   const badgeBlock = badge
     ? `<span class="closebadge ${badge.cls}">${esc(badge.label)}</span>`
     : "";
@@ -314,21 +344,39 @@ function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
   const dataSrc = esc(l.source);
   const favId = esc(l.source_id);
 
+  const montoBlock = montoStr
+    ? `<span class="monto">${icon("coin")}${esc(montoStr)}</span>`
+    : "";
+  const closeBlock = closeStr
+    ? `<span class="closeat">${icon("calendar")}${esc(closeStr)}</span>`
+    : "";
+  const mrow = montoBlock || closeBlock
+    ? `<div class="mrow">${montoBlock}${closeBlock}</div>`
+    : "";
+
   return (
     `<article class="card ${isNew ? "new" : ""}"` +
     ` data-cats="${dataCats}" data-text="${dataText}"` +
     ` data-new="${isNew ? 1 : 0}" data-week="${isWeek ? 1 : 0}"` +
     ` data-monto="${dataMonto}" data-close="${dataClose}"` +
     ` data-inst="${dataInst}" data-clasif="${dataClasif}" data-src="${dataSrc}" data-id="${favId}">` +
-    `<div class="card-top"><div class="tags">${tags}</div>` +
-    `<div class="toprt">${badgeBlock}` +
+    `<div class="card-top"><div class="tags">${badgeBlock}${tags}</div>` +
+    `<div class="toprt">` +
     `<button class="star" data-fav="${favId}" title="Guardar" aria-label="Guardar">☆</button>` +
     `${isNew ? `<span class="pill-new">NUEVO</span>` : ""}</div></div>` +
-    `<div><p class="title">${esc(l.title)}</p><p class="entity">${esc(l.entity)}</p></div>` +
-    montoBlock +
+    `<div class="head"><p class="title">${esc(l.title)}</p>` +
+    `<p class="entity">${icon("building")}<span class="etxt">${esc(l.entity)}</span></p></div>` +
+    mrow +
+    `<div class="foot">` +
+    (procNo
+      ? `<span class="procno">${icon("hash")}<span class="ptxt">${esc(procNo)}</span></span>`
+      : `<span class="procno"></span>`) +
+    `<button class="vermas" type="button" aria-expanded="false">` +
+    `<span class="vmtxt">Ver más</span>${icon("chevron")}</button>` +
+    `</div>` +
+    `<div class="detail">` +
     (facts.length ? `<div class="facts">${facts.join("")}</div>` : "") +
-    `<div class="foot"><span class="procno">${esc(procNo)}</span>` +
-    detailButton(l) +
+    `<div class="detail-foot">${detailButton(l)}</div>` +
     `</div>` +
     `</article>`
   );
@@ -622,8 +670,21 @@ const FILTER_SCRIPT = `<script>
   });
   document.addEventListener('click', function(ev){
     var t = ev.target;
-    if (t && t.classList && t.classList.contains('star')){
-      toggleFav(t.getAttribute('data-fav')); paintStars();
+    if (!t || !t.closest) return;
+    var vm = t.closest('.vermas');
+    if (vm){
+      var card = vm.closest('.card');
+      if (card){
+        var open = card.classList.toggle('open');
+        vm.setAttribute('aria-expanded', open ? 'true' : 'false');
+        var tx = vm.querySelector('.vmtxt');
+        if (tx) tx.textContent = open ? 'Ver menos' : 'Ver más';
+      }
+      return;
+    }
+    var star = t.closest('.star');
+    if (star){
+      toggleFav(star.getAttribute('data-fav')); paintStars();
       if (favOnly) apply();
     }
   });
