@@ -54,6 +54,50 @@ export const CATEGORIES: Record<string, string[]> = {
     "consultoria", "servicios profesionales", "asesoria",
     "estudios preliminares", "diseno", "supervision",
   ],
+  salud: [
+    "salud", "hospital", "hospitales", "clinica", "clinicas", "ebais",
+    "equipo medico", "equipos medicos", "medicamento", "medicamentos",
+    "insumos medicos", "ambulancia", "ambulancias", "dispositivos medicos",
+    "laboratorio clinico", "farmacia",
+  ],
+  educacion: [
+    "educacion", "escuela", "escuelas", "colegio", "colegios",
+    "universidad", "universidades", "centro educativo", "centros educativos",
+    "material didactico", "mobiliario escolar", "comedor escolar",
+    "biblioteca", "kinder", "preescolar",
+  ],
+  seguridad: [
+    "seguridad", "policia", "vigilancia", "camaras de seguridad",
+    "camara de seguridad", "seguridad ciudadana", "patrulla", "patrullas",
+    "bomberos", "emergencias", "custodia",
+  ],
+  transporte: [
+    "transporte publico", "transporte", "semaforo", "semaforos",
+    "señalizacion", "senalizacion", "ciclovia", "ciclovias",
+    "terminal de buses", "autobus", "autobuses", "tren", "ferrocarril",
+    "flota vehicular",
+  ],
+  tecnologia: [
+    "sistema informatico", "sistemas informaticos", "software", "hardware",
+    "equipo de computo", "equipos de computo", "telecomunicaciones",
+    "red informatica", "servidor", "servidores", "licencias de software",
+    "plataforma digital", "desarrollo de software", "ciberseguridad",
+  ],
+  administracion: [
+    "suministros de oficina", "papeleria", "mobiliario de oficina",
+    "servicios generales", "limpieza", "aseo", "seguridad ocupacional",
+    "alquiler de vehiculos", "viaticos", "catering", "alimentacion",
+    "uniformes",
+  ],
+  agropecuario: [
+    "agricultura", "agricola", "ganaderia", "pesca", "riego agricola",
+    "semillas", "fertilizantes", "agropecuario", "extension agropecuaria",
+  ],
+  "cultura-deporte": [
+    "deporte", "deportes", "cultura", "recreacion", "gimnasio",
+    "polideportivo", "estadio", "museo", "museos", "biblioteca publica",
+    "parque recreativo", "actividad cultural", "actividades culturales",
+  ],
 };
 
 export function normalize(s: string): string {
@@ -93,12 +137,4 @@ export function classify(lic: Licitacion): Licitacion {
   lic.categories = cats;
   lic.keywords_hit = [...hits].sort();
   return lic;
-}
-
-export function filterRelevant(lics: Licitacion[], include: Set<string> | null): Licitacion[] {
-  return lics.filter((l) => {
-    if (l.categories.length === 0) return false;
-    if (include === null) return true;
-    return l.categories.some((c) => include.has(c));
-  });
 }

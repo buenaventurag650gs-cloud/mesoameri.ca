@@ -10,19 +10,34 @@ import { COUNTRIES, dedupeKey, type Licitacion } from "./schema";
 export const CAT_LABEL: Record<string, string> = {
   urbanismo: "Urbanismo",
   ambiental: "Ambiental",
+  residuos: "Residuos",
+  "agua-saneamiento": "Agua y saneamiento",
   "obra-publica": "Obra pública",
+  energia: "Energía",
+  consultoria: "Consultoría",
+  salud: "Salud",
+  educacion: "Educación",
+  seguridad: "Seguridad",
+  transporte: "Transporte",
+  tecnologia: "Tecnología",
+  administracion: "Administración",
+  agropecuario: "Agropecuario",
+  "cultura-deporte": "Cultura y deporte",
 };
 
-// Agrupación de categorías para la UI: residuos y agua-saneamiento se muestran
-// y filtran bajo "ambiental". El clasificador sigue guardando la categoría
-// granular en los datos; esto solo afecta cómo se agrupa de cara al usuario.
-const CAT_GROUP: Record<string, string> = {
-  residuos: "ambiental",
-  "agua-saneamiento": "ambiental",
-};
+// Antes residuos/agua-saneamiento se agrupaban bajo "ambiental" para no
+// saturar los chips de filtro. Ahora que hay un botón por tema, cada
+// categoría se muestra y filtra por separado — groupCat queda como
+// identidad (se mantiene la función por si hace falta volver a agrupar).
+const CAT_GROUP: Record<string, string> = {};
 export function groupCat(c: string): string {
   return CAT_GROUP[c] ?? c;
 }
+
+// Categoría comodín para concursos que el clasificador no logró ubicar en
+// ningún tema — así el chip "Sin categoría" permite verlos aparte sin que
+// se pierdan de la lista general ("Todas" los sigue mostrando siempre).
+const OTROS = "__otros__";
 
 // Bandera del país (imagen, se ve igual en todos los sistemas incluido Windows).
 // MULTI y desconocidos usan un globo.
@@ -420,8 +435,9 @@ function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
   const dataText = esc(
     `${l.title} ${l.entity} ${procNo} ${procNoFlat} ${sicopNo}`.toLowerCase()
   );
-  // Categorías agrupadas: una tarjeta de agua-saneamiento matchea el chip "ambiental".
-  const dataCats = esc([...new Set(l.categories.map(groupCat))].join(" "));
+  // Si no matcheó ningún tema, cae en "Sin categoría" para que el chip la
+  // encuentre, pero el chip "Todas" la sigue mostrando siempre.
+  const dataCats = esc(catGroups.length ? catGroups.join(" ") : OTROS);
   const dataMonto = e ? (e.montoUSD && e.montoUSD > 0 ? e.montoUSD * 520 : e.montoCRC ?? 0) : 0;
   const dataClose = esc(l.close_date ?? "");
   const dataInst = esc(l.entity.toLowerCase());
@@ -514,11 +530,13 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
   const nuevas = lics.filter((l) => newKeys.has(dedupeKey(l))).length;
   const esta_semana = lics.filter((l) => weekKeys.has(dedupeKey(l))).length;
 
-  // Conteo por categoría agrupada para los chips (una tarjeta cuenta una vez
-  // por grupo, aunque tenga residuos y agua-saneamiento a la vez).
+  // Conteo por categoría para los chips (una tarjeta cuenta una vez por
+  // tema, aunque matchee varios términos del mismo). Las que no matchearon
+  // ningún tema cuentan bajo "Sin categoría".
   const catCounts = new Map<string, number>();
   for (const l of lics) {
     const groups = new Set(l.categories.map(groupCat).filter((c) => CAT_LABEL[c]));
+    if (groups.size === 0) groups.add(OTROS);
     for (const g of groups) catCounts.set(g, (catCounts.get(g) ?? 0) + 1);
   }
 
@@ -549,9 +567,11 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     ? sections.join("")
     : `<div class="empty">Sin concursos vigentes por ahora. El sistema se actualiza todos los días.</div>`;
 
-  // Chips de categoría (+ Esta semana + Guardados). Todos los chips son
-  // exclusivos entre sí excepto Guardados, que se puede sumar a cualquiera.
-  const chipOrder = ["urbanismo", "ambiental", "obra-publica"];
+  // Chips de categoría (+ Sin categoría + Esta semana + Guardados). Todos
+  // los chips son exclusivos entre sí excepto Guardados, que se puede sumar
+  // a cualquiera. Un chip por tema, en el orden declarado en CAT_LABEL;
+  // solo se muestran los que tienen al menos un concurso.
+  const chipOrder = Object.keys(CAT_LABEL);
   const chips =
     `<button class="chip on" data-cat="">Todas</button>` +
     chipOrder
@@ -562,6 +582,9 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
           `<span class="n">${catCounts.get(c)}</span></button>`
       )
       .join("") +
+    (catCounts.get(OTROS)
+      ? `<button class="chip" data-cat="${OTROS}">Sin categoría<span class="n">${catCounts.get(OTROS)}</span></button>`
+      : "") +
     (esta_semana
       ? `<button class="chip" id="weekchip">Esta semana<span class="n">${esta_semana}</span></button>`
       : "") +
@@ -588,7 +611,13 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
   // Fuentes presentes (SICOP, BID, UNDP) con su conteo
   const srcCounts = new Map<string, number>();
   for (const l of lics) srcCounts.set(l.source, (srcCounts.get(l.source) ?? 0) + 1);
-  const SRC_LABEL: Record<string, string> = { sicop_cr: "SICOP", bid: "BID", undp: "ONU (PNUD y otras)" };
+  const SRC_LABEL: Record<string, string> = {
+    sicop_cr: "SICOP",
+    panama_dgcp: "PanamaCompra",
+    bid: "BID",
+    undp: "ONU (PNUD y otras)",
+    world_bank: "Banco Mundial",
+  };
   const srcOptions =
     `<option value="">Todas las fuentes</option>` +
     [...srcCounts.entries()]

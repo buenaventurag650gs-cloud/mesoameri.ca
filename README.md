@@ -20,11 +20,9 @@ scheduled() handler
 │                      │   [guatecompras, bcie, ... próximos]
 └──────────────────────┘
       ↓
-Classifier (keywords por categoría, word boundaries)
+Classifier (keywords por categoría, word boundaries — sin categoría = "Sin categoría")
       ↓
-Filter (solo urbanismo/ambiental/residuos/agua/obra)
-      ↓
-D1 upsert (dedupe por source+id, trackea nuevo/actualizado/sin cambios)
+D1 upsert — se guarda TODO, clasificado o no (dedupe por source+id, trackea nuevo/actualizado/sin cambios)
 
 fetch() handler
       ↓
@@ -124,12 +122,15 @@ El pipeline no necesita otros cambios.
 
 ## Afinar el clasificador
 
-Diccionarios en `src/classifier.ts`. Para agregar una categoría nueva
-o términos nuevos no hay que redeployar ninguna otra pieza, solo
-reemplazás el worker.
+Diccionarios en `src/classifier.ts` (`CATEGORIES`). Para agregar un tema
+nuevo o términos nuevos no hay que tocar nada más que ese archivo —
+etiquetas visibles (nombre del chip/checkbox) en `CAT_LABEL` dentro de
+`src/digest.ts`.
 
-Cambiar qué categorías entran al digest: variable `RELEVANT_CATEGORIES`
-en `wrangler.toml`.
+El digest muestra TODO lo que traen las fuentes (vigentes de cualquier
+tema, incluso sin clasificar — esas caen en el chip "Sin categoría").
+La clasificación por tema ya no filtra qué se guarda: solo alimenta
+los botones de filtro del digest y el filtro por tema del correo.
 
 ## Costos esperados
 

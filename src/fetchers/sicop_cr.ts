@@ -31,9 +31,18 @@ const WINDOW_DAYS = 60; // ventana de publicación para el universo de "abiertos
 const TERM_DELAY_MS = 250; // espaciar búsquedas: evita rate-limit (422)
 const REQ_TIMEOUT_MS = 25_000;
 
-// Términos de búsqueda (substrings) que cubren las categorías de interés.
+// Términos de búsqueda (substrings) que cubren TODOS los temas del
+// clasificador (ver src/classifier.ts), no solo los de urbanismo/ambiental.
+// SICOP no tiene forma de traer "todo sin filtro": sin `cartelNm` la API
+// devuelve la base histórica completa (+350k registros), así que la única
+// manera real de "incluir todo" es cubrir cada tema con su propio término.
 // Alta cobertura; el clasificador luego descarta falsos positivos
 // (p.ej. "urban" que pegue en un evento cultural).
+//
+// Cada término cuesta 1 llamada (subrequest). Se mantienen cortos/amplios
+// a propósito para cubrir el máximo de temas posible sin pasarnos del
+// presupuesto gratuito de Cloudflare (~50 subrequests por corrida,
+// compartido con PanamaCompra y, según el día, BID/PNUD/Banco Mundial).
 const SEARCH_TERMS: string[] = [
   // urbanismo
   "plan regulador", "ordenamiento territorial", "catastro", "urban",
@@ -47,6 +56,22 @@ const SEARCH_TERMS: string[] = [
   // obra pública
   "construc", "remodelac", "vial", "carretera", "pavimen", "edificio",
   "aeropuerto", "puente",
+  // salud
+  "salud",
+  // educación
+  "educ",
+  // seguridad
+  "seguridad",
+  // transporte
+  "transport",
+  // tecnología
+  "informatic", "software",
+  // administración (suministros, oficina, servicios generales)
+  "oficina",
+  // agropecuario
+  "agric", "pesca",
+  // cultura y deporte
+  "deport", "cultural",
 ];
 
 // La página pública de consulta de concursos (no hay deep-link por cartel:

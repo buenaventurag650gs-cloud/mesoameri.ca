@@ -10,7 +10,7 @@
 //   POST /admin/run              → disparar fetch manual (requiere ADMIN_TOKEN)
 
 import { diagnoseCartel, renderCartelDetail } from "./cartel";
-import { classify, filterRelevant } from "./classifier";
+import { classify } from "./classifier";
 import { CAT_LABEL, groupCat, renderDigest } from "./digest";
 import { renderDigestEmail, sendBatch, sendEmail } from "./email";
 import { FETCHERS } from "./fetchers";
@@ -29,7 +29,6 @@ import {
 export interface Env {
   DB: D1Database;
   USER_AGENT: string;
-  RELEVANT_CATEGORIES: string;
   ADMIN_TOKEN?: string;
   CONTACT_EMAIL?: string;
   // Correo (Resend)
@@ -400,7 +399,9 @@ async function sendDailyDigest(env: Env, force = false): Promise<Record<string, 
 // Rotación de fuentes por día de la semana para no superar el límite de
 // subrequests del plan gratuito de Cloudflare (~50 por invocación).
 //
-//  SICOP (CR)      → todos los días (~26 subrequests por término de búsqueda)
+//  SICOP (CR)      → todos los días (~39 subrequests — 1 por término de
+//                     búsqueda; cubre TODOS los temas del clasificador,
+//                     no solo los de urbanismo/ambiental)
 //  PanamaCompra V3 → todos los días (1 sola llamada — API con filtros reales)
 //  BID             → lun, jue       (9 subrequests)
 //  UNDP            → mar, vie       (9 subrequests)
@@ -408,7 +409,10 @@ async function sendDailyDigest(env: Env, force = false): Promise<Record<string, 
 //  domingo         → SICOP + PanamaCompra (mantenimiento mínimo)
 //
 // Cada fuente multilateral corre en su propio día (nunca dos pesadas juntas),
-// así el pico diario es ~35 subrequests, con buen margen bajo el límite.
+// así el pico diario es ~49 subrequests (39 SICOP + 1 Panamá + 9 multilateral),
+// justo bajo el límite. El detalle de SICOP (presupuesto, tipo, apertura…)
+// ya no se enriquece aquí — lo completa el cron de cada 2 horas, que no
+// compite por este mismo presupuesto.
 // Si se llama desde /admin/run?all=1, corre todo sin rotación (diagnóstico).
 function activeFetchers(allSources = false): typeof FETCHERS {
   if (allSources) return FETCHERS;
@@ -425,9 +429,6 @@ function activeFetchers(allSources = false): typeof FETCHERS {
 
 async function runPipeline(env: Env, allSources = false): Promise<Record<string, unknown>> {
   const storage = new Storage(env.DB);
-  const include = new Set(
-    env.RELEVANT_CATEGORIES.split(",").map((s) => s.trim()).filter(Boolean)
-  );
 
   const perSource: Record<string, unknown> = {};
   let totalRelevant = 0;
@@ -445,19 +446,20 @@ async function runPipeline(env: Env, allSources = false): Promise<Record<string,
       console.error(`fetcher ${name} failed:`, error);
     }
 
-    // Clasificar y filtrar
+    // Clasificar por tema (para los chips/filtros del digest y el correo
+    // por tema), pero ya no se descarta nada por categoría: se guarda todo
+    // lo que trae la fuente, clasificado o no.
     const classified = lics.map(classify);
-    const relevant = filterRelevant(classified, include.size > 0 ? include : null);
-    totalRelevant += relevant.length;
+    totalRelevant += classified.length;
 
     // Enriquecer con datos de detalle SOLO los que aún no tienen detalle
     // guardado (nuevos). Así la 1ª corrida llena el backlog y las siguientes
     // solo tocan lo nuevo, sin repetir llamadas caras.
     let enrichInfo: unknown = undefined;
-    if (enrich && relevant.length > 0) {
+    if (enrich && classified.length > 0) {
       try {
-        const already = await storage.enrichedKeys(relevant.map(dedupeKey));
-        const pending = relevant.filter((l) => !already.has(dedupeKey(l)));
+        const already = await storage.enrichedKeys(classified.map(dedupeKey));
+        const pending = classified.filter((l) => !already.has(dedupeKey(l)));
         if (pending.length > 0) {
           const stats = await enrich(pending, env);
           enrichInfo = { pending: pending.length, ...(stats ?? {}) };
@@ -471,12 +473,12 @@ async function runPipeline(env: Env, allSources = false): Promise<Record<string,
     }
 
     // Guardar
-    const counts = await storage.upsertMany(relevant);
+    const counts = await storage.upsertMany(classified);
     await storage.recordRun(name, startedAt, counts, error);
 
     perSource[name] = {
       fetched: lics.length,
-      relevant: relevant.length,
+      relevant: classified.length,
       ...counts,
       error,
       ...(enrichInfo ? { enrich: enrichInfo } : {}),

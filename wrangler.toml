@@ -20,8 +20,6 @@ database_id = "f81c5c39-c605-4ea2-be52-bd7322fd76eb"
 # Variables públicas (cambialas desde el dashboard o con wrangler secret)
 [vars]
 USER_AGENT = "mesoamerica-bot/0.1 (+contact: set CONTACT_EMAIL secret)"
-# Categorías a incluir en el digest, separadas por coma
-RELEVANT_CATEGORIES = "urbanismo,ambiental,residuos,agua-saneamiento,obra-publica"
 # Base para los enlaces del correo (cambiar al dominio propio cuando exista)
 PUBLIC_URL = "https://mesoameri-ca.buenaventurag650gs.workers.dev"
 
