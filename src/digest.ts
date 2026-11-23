@@ -119,6 +119,7 @@ function getProcNo(l: Licitacion): string {
 // leemos del raw si viene (UNICEF, UNOPS, PNUD…).
 function getSourceLabel(l: Licitacion): string {
   if (l.source === "sicop_cr") return "SICOP";
+  if (l.source === "panama_dgcp") return "PanamaCompra";
   if (l.source === "bid") return "BID";
   if (l.source === "world_bank") return "Banco Mundial";
   if (l.source === "undp") {
@@ -132,6 +133,7 @@ function getSourceLabel(l: Licitacion): string {
 // Clase CSS por fuente, para colorear la etiqueta.
 function getSourceClass(l: Licitacion): string {
   if (l.source === "sicop_cr") return "src-sicop";
+  if (l.source === "panama_dgcp") return "src-pa";
   if (l.source === "bid") return "src-bid";
   if (l.source === "world_bank") return "src-wb";
   if (l.source === "undp") return "src-un";
@@ -265,6 +267,7 @@ const STYLE = `
   .srcbadge { border-radius: 4px; padding: 2px 7px; font-size: 10.5px; font-weight: 700;
               letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
   .srcbadge.src-sicop { background: #e4edf7; color: #083d73; }
+  .srcbadge.src-pa    { background: #fbe8e6; color: #8a2a1f; }
   .srcbadge.src-bid   { background: #e8f1e4; color: #2d5e1b; }
   .srcbadge.src-wb    { background: #efe7f7; color: #5a3a86; }
   .srcbadge.src-un    { background: #e4f0f7; color: #175a8a; }

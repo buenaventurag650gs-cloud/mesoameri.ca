@@ -400,11 +400,12 @@ async function sendDailyDigest(env: Env, force = false): Promise<Record<string, 
 // Rotación de fuentes por día de la semana para no superar el límite de
 // subrequests del plan gratuito de Cloudflare (~50 por invocación).
 //
-//  SICOP (CR)   → todos los días   (~26 subrequests por término de búsqueda)
-//  BID          → lun, jue         (9 subrequests)
-//  UNDP         → mar, vie         (9 subrequests)
-//  Banco Mundial→ mié, sáb         (9 subrequests)
-//  domingo      → solo SICOP       (mantenimiento mínimo)
+//  SICOP (CR)      → todos los días (~26 subrequests por término de búsqueda)
+//  PanamaCompra V3 → todos los días (1 sola llamada — API con filtros reales)
+//  BID             → lun, jue       (9 subrequests)
+//  UNDP            → mar, vie       (9 subrequests)
+//  Banco Mundial   → mié, sáb       (9 subrequests)
+//  domingo         → SICOP + PanamaCompra (mantenimiento mínimo)
 //
 // Cada fuente multilateral corre en su propio día (nunca dos pesadas juntas),
 // así el pico diario es ~35 subrequests, con buen margen bajo el límite.
@@ -413,10 +414,11 @@ function activeFetchers(allSources = false): typeof FETCHERS {
   if (allSources) return FETCHERS;
   const dow = new Date().getUTCDay(); // 0=dom, 1=lun … 6=sáb
   return FETCHERS.filter(({ name }) => {
-    if (name === "sicop_cr")   return true;               // siempre
-    if (name === "bid")        return [1, 4].includes(dow); // lun, jue
-    if (name === "undp")       return [2, 5].includes(dow); // mar, vie
-    if (name === "world_bank") return [3, 6].includes(dow); // mié, sáb
+    if (name === "sicop_cr")     return true;               // siempre
+    if (name === "panama_dgcp")  return true;               // siempre (1 request)
+    if (name === "bid")          return [1, 4].includes(dow); // lun, jue
+    if (name === "undp")         return [2, 5].includes(dow); // mar, vie
+    if (name === "world_bank")   return [3, 6].includes(dow); // mié, sáb
     return true; // fuentes futuras: corren siempre por defecto
   });
 }

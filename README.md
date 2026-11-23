@@ -105,12 +105,17 @@ ver qué fetcher falló y con qué mensaje.
 ## Fetchers por agregar (orden sugerido)
 
 1. **Guatecompras** (OCDS vía Ministerio de Finanzas de Guatemala)
-2. **BCIE** — adquisiciones.bcie.org, scraping HTML
+2. **BCIE** — adquisiciones.bcie.org bloquea scraping directo (confirmado);
+   su portal de datos abiertos (datosabiertos.bcie.org) solo tiene el plan de
+   adquisiciones, no licitaciones vigentes — descartado por ahora
 3. **CompraNet** (México) — regional sur
-4. **PanamaCompra** — scraping, sin OCDS oficial
-5. **COMPRASAL** (El Salvador) — requiere sesión
-6. **HonduCompras** (Honduras) — poco documentado
-7. **BID / Banco Mundial** — proyectos regionales grandes
+4. **COMPRASAL** (El Salvador) — requiere sesión
+5. **HonduCompras** (Honduras) — poco documentado
+
+Ya agregados: SICOP CR (`sicop_cr.ts`), **PanamaCompra V3** (`panama_dgcp.ts`
+— API REST real en `apisv3.panamacompra.gob.pa/busqueda/proceso-lista-publico`,
+sin login; el portal de datos abiertos OCDS de Panamá dejó de actualizarse a
+mediados de 2024, así que no se usó), BID, PNUD y Banco Mundial.
 
 Agregar un fetcher nuevo = un archivo en `src/fetchers/` que exporta
 `async function fetchX(env: FetcherEnv): Promise<Licitacion[]>` y
