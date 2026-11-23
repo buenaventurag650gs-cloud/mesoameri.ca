@@ -53,11 +53,13 @@ function detailUrl(base: string, l: Licitacion): string {
 }
 
 // Email HTML simple y compatible (estilos inline, sin scripts).
+// Si se pasa unsubUrl, agrega un pie con el enlace para darse de baja.
 export function renderDigestEmail(
   newLics: Licitacion[],
   totalVigentes: number,
   base: string,
-  asOf: string
+  asOf: string,
+  unsubUrl?: string
 ): string {
   const items = newLics
     .slice(0, 60)
@@ -89,7 +91,11 @@ export function renderDigestEmail(
   <p style="margin:22px 0 0;">
     <a href="${esc(base)}/?country=CR" style="display:inline-block;background:#0a66c2;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;">Ver todas las licitaciones →</a>
   </p>
-  <p style="color:#94a3b8;font-size:12px;margin-top:24px;">Enviado automáticamente por Mesoamérica. Fuente: SICOP (Costa Rica).</p>
+  <p style="color:#94a3b8;font-size:12px;margin-top:24px;">Enviado automáticamente por Mesoamérica. Fuente: SICOP (Costa Rica).${
+    unsubUrl
+      ? ` · <a href="${esc(unsubUrl)}" style="color:#94a3b8;">Darme de baja</a>`
+      : ""
+  }</p>
 </div></body></html>`;
 }
 
@@ -119,4 +125,52 @@ export async function sendEmail(env: EmailEnv, subject: string, html: string): P
     /* ignore */
   }
   return { sent: true, status: res.status, id };
+}
+
+// Envío por lotes a los suscriptores: Resend acepta hasta 100 correos por
+// request (/emails/batch), así cada lote cuesta UN solo subrequest, sin
+// importar cuántos suscriptores haya. Cada entrada lleva su propio HTML (con
+// su enlace de baja personalizado).
+export interface BatchEmail {
+  to: string;
+  subject: string;
+  html: string;
+}
+
+export async function sendBatch(
+  env: EmailEnv,
+  emails: BatchEmail[]
+): Promise<{ sent: number; batches: number; error?: string }> {
+  if (!env.RESEND_API_KEY) return { sent: 0, batches: 0, error: "falta RESEND_API_KEY" };
+  if (emails.length === 0) return { sent: 0, batches: 0 };
+
+  const from = env.DIGEST_EMAIL_FROM || "Mesoamérica <onboarding@resend.dev>";
+  let sent = 0;
+  let batches = 0;
+  let error: string | undefined;
+
+  for (let i = 0; i < emails.length; i += 100) {
+    const chunk = emails.slice(i, i + 100);
+    batches++;
+    try {
+      const res = await fetch("https://api.resend.com/emails/batch", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(
+          chunk.map((e) => ({ from, to: [e.to], subject: e.subject, html: e.html }))
+        ),
+      });
+      if (res.ok) {
+        sent += chunk.length;
+      } else {
+        error = `HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 160)}`;
+      }
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+  return { sent, batches, error };
 }

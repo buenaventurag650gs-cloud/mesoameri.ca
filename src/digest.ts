@@ -3,8 +3,11 @@
 
 import { COUNTRIES, dedupeKey, type Licitacion } from "./schema";
 
-// Etiquetas legibles de las categorías de interés (para chips de filtro).
-const CAT_LABEL: Record<string, string> = {
+// Etiquetas legibles de las categorías de interés (para chips de filtro y
+// para los temas que puede elegir alguien al suscribirse). Exportadas para
+// que index.ts use el mismo catálogo en el formulario de suscripción y en
+// el filtrado del correo por tema.
+export const CAT_LABEL: Record<string, string> = {
   urbanismo: "Urbanismo",
   ambiental: "Ambiental",
   "obra-publica": "Obra pública",
@@ -17,7 +20,7 @@ const CAT_GROUP: Record<string, string> = {
   residuos: "ambiental",
   "agua-saneamiento": "ambiental",
 };
-function groupCat(c: string): string {
+export function groupCat(c: string): string {
   return CAT_GROUP[c] ?? c;
 }
 
@@ -164,6 +167,8 @@ const STYLE = `
          color: var(--ink); background: var(--bg); margin: 0; padding: 0 16px 48px;
          overflow-wrap: anywhere; word-break: break-word; }
   .wrap { max-width: 1180px; margin: 0 auto; }
+  .wrap, header.top, .section, .card { max-width: 100%; }
+  img, svg { max-width: 100%; }
   header.top { padding: 28px 0 8px; }
   h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
   .sub { color: var(--muted); margin: 0; font-size: 14px; }
@@ -171,6 +176,23 @@ const STYLE = `
   .nav a { background: #fff; border: 1px solid var(--line); color: var(--brand-ink);
            padding: 6px 12px; border-radius: 999px; font-size: 13px; text-decoration: none; }
   .nav a:hover { border-color: var(--brand); color: var(--brand); }
+  .subscribe { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+               background: #eef4fc; border: 1px solid #d7e6f7; border-radius: 12px; padding: 12px 16px; margin: 8px 0 4px; }
+  .subscribe .sub-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .subscribe .sub-txt strong { font-size: 14px; color: var(--brand-ink); }
+  .subscribe .sub-txt span { font-size: 12.5px; color: var(--muted); }
+  .subscribe .sub-row { display: flex; gap: 8px; flex: 1; min-width: 240px; max-width: 420px; }
+  .subscribe input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+                     font-size: 14px; background: #fff; color: var(--ink); }
+  .subscribe button { background: var(--brand); color: #fff; border: none; border-radius: 8px; padding: 9px 16px;
+                      font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .subscribe button:hover { background: var(--brand-ink); }
+  .subscribe .sub-topics { flex-basis: 100%; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .subscribe .sub-topics-label { font-size: 12px; color: var(--muted); }
+  .subscribe .sub-topics-list { display: flex; gap: 12px; flex-wrap: wrap; }
+  .sub-topic { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--brand-ink);
+               cursor: pointer; white-space: nowrap; }
+  .sub-topic input { width: auto; flex: none; accent-color: var(--brand); cursor: pointer; }
   .country { margin: 26px 0 12px; font-size: 13px; font-weight: 700; letter-spacing: .04em;
              text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
   .country::after { content: ""; flex: 1; height: 1px; background: var(--line); }
@@ -199,8 +221,9 @@ const STYLE = `
   .card.open .detail { display: block; }
   .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; font-size: 13px;
            border-top: 1px solid var(--line); padding-top: 12px; }
+  .fact { min-width: 0; }
   .fact .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
-  .fact .v { font-weight: 600; }
+  .fact .v { font-weight: 600; overflow-wrap: anywhere; }
   .detail-foot { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
   .foot { display: flex; justify-content: space-between; align-items: center; gap: 10px;
           border-top: 1px solid var(--line); padding-top: 10px; }
@@ -268,10 +291,15 @@ const STYLE = `
     .selects { flex-direction: column; }
     .selects select { width: 100%; min-width: 0; }
     .foot { gap: 8px; }
-    .detail-foot .btn { width: 100%; text-align: center; }
+    .detail-foot .btn { width: 100%; text-align: center; justify-content: center; }
     .procno { font-size: 11.5px; }
+    .card-top { gap: 6px; }
+    .fact .v { font-size: 13.5px; }
     .nav { gap: 5px; }
     .nav a { padding: 5px 10px; font-size: 12.5px; }
+    .subscribe { flex-direction: column; align-items: stretch; gap: 10px; }
+    .subscribe .sub-row { max-width: none; min-width: 0; }
+    .subscribe .sub-topics { flex-direction: column; align-items: flex-start; gap: 6px; }
   }
 </style>
 `;
@@ -361,6 +389,11 @@ function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
   const addFact = (k: string, v: string) => {
     if (v) facts.push(`<div class="fact"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`);
   };
+  // Identificadores desagregados: número de procedimiento y número SICOP,
+  // para ubicar la licitación por cualquiera de los dos.
+  const sicopNo = l.source === "sicop_cr" && l.source_id && /^\d+$/.test(l.source_id) ? l.source_id : "";
+  if (procNo) addFact("Nº procedimiento", procNo);
+  if (sicopNo) addFact("Nº SICOP", sicopNo);
   if (e?.clasificacion) addFact("Clasificación", e.clasificacion);
   if (e?.tipoProceso) addFact("Tipo", e.tipoProceso);
   if (e?.modalidad) addFact("Modalidad", e.modalidad);
@@ -377,8 +410,13 @@ function card(l: Licitacion, isNew: boolean, isWeek: boolean): string {
     ? `<span class="closebadge ${badge.cls}">${esc(badge.label)}</span>`
     : "";
 
-  // Atributos para filtrar/ordenar en el navegador
-  const dataText = esc(`${l.title} ${l.entity} ${procNo}`.toLowerCase());
+  // Atributos para filtrar/ordenar en el navegador.
+  // El texto de búsqueda incluye ambos números (procedimiento y SICOP) y una
+  // versión del procedimiento sin guiones, para encontrar por cualquier parte.
+  const procNoFlat = procNo.replace(/[-\s]/g, "");
+  const dataText = esc(
+    `${l.title} ${l.entity} ${procNo} ${procNoFlat} ${sicopNo}`.toLowerCase()
+  );
   // Categorías agrupadas: una tarjeta de agua-saneamiento matchea el chip "ambiental".
   const dataCats = esc([...new Set(l.categories.map(groupCat))].join(" "));
   const dataMonto = e ? (e.montoUSD && e.montoUSD > 0 ? e.montoUSD * 520 : e.montoCRC ?? 0) : 0;
@@ -601,6 +639,32 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
        </nav>`
     : "";
 
+  // Checkboxes de temas: quien se suscribe elige qué le interesa. Si no
+  // marca ninguno, recibe todas las categorías (comportamiento por defecto).
+  const topicChecks = Object.entries(CAT_LABEL)
+    .map(
+      ([key, label]) =>
+        `<label class="sub-topic"><input type="checkbox" name="topics" value="${esc(key)}">${esc(label)}</label>`
+    )
+    .join("");
+
+  const subscribeBox = opts.showNav
+    ? `<form class="subscribe" method="post" action="/subscribe">
+         <div class="sub-txt">
+           <strong>Recibí las nuevas licitaciones por correo</strong>
+           <span>Un resumen cuando aparezcan concursos nuevos. Te podés dar de baja cuando querás.</span>
+         </div>
+         <div class="sub-row">
+           <input type="email" name="email" required placeholder="tu@correo.com" aria-label="Tu correo electrónico">
+           <button type="submit">Suscribirme</button>
+         </div>
+         <div class="sub-topics">
+           <span class="sub-topics-label">Temas (opcional, si no marcás ninguno recibís todo):</span>
+           <div class="sub-topics-list">${topicChecks}</div>
+         </div>
+       </form>`
+    : "";
+
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>${STYLE}</head>
@@ -610,6 +674,7 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
   <p class="sub">${asOf} · ${lics.length} vigentes${nuevas ? ` · ${nuevas} nuevas` : ""} · ${esc(totals)}</p>
 </header>
 ${nav}
+${subscribeBox}
 ${filters}
 ${body}
 <div class="noresults" id="noresults">No hay concursos que coincidan con el filtro.</div>

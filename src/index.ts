@@ -11,12 +11,20 @@
 
 import { diagnoseCartel, renderCartelDetail } from "./cartel";
 import { classify, filterRelevant } from "./classifier";
-import { renderDigest } from "./digest";
-import { renderDigestEmail, sendEmail } from "./email";
+import { CAT_LABEL, groupCat, renderDigest } from "./digest";
+import { renderDigestEmail, sendBatch, sendEmail } from "./email";
 import { FETCHERS } from "./fetchers";
 import { enrichSicopCr } from "./fetchers/sicop_cr";
 import { dedupeKey, type Licitacion } from "./schema";
 import { Storage } from "./storage";
+import {
+  confirmEmailHtml,
+  genToken,
+  normalizeEmail,
+  statusPage,
+  unsubscribeUrl,
+  validEmail,
+} from "./subscribe";
 
 export interface Env {
   DB: D1Database;
@@ -121,6 +129,109 @@ export default {
       return jsonResponse(result);
     }
 
+    // --- Suscripción al correo (doble opt-in) ---
+    const htmlPage = (body: string) =>
+      new Response(body, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    const base = (env.PUBLIC_URL || url.origin).replace(/\/$/, "");
+
+    if (url.pathname === "/subscribe" && request.method === "POST") {
+      const form = await request.formData().catch(() => null);
+      const email = normalizeEmail(String(form?.get("email") ?? ""));
+      if (!validEmail(email)) {
+        return htmlPage(
+          statusPage({
+            title: "Correo inválido",
+            heading: "Revisá el correo",
+            message: "Ese correo no parece válido. Volvé e intentá de nuevo.",
+            base,
+            tone: "error",
+          })
+        );
+      }
+      if (!env.RESEND_API_KEY) {
+        return htmlPage(
+          statusPage({
+            title: "No disponible",
+            heading: "Suscripción no disponible",
+            message: "El envío de correos aún no está configurado. Probá más tarde.",
+            base,
+            tone: "error",
+          })
+        );
+      }
+      // Temas elegidos (checkboxes "topics"); solo se guardan los que son
+      // categorías válidas. Vacío = recibe todas las categorías.
+      const chosenTopics = (form?.getAll("topics") ?? [])
+        .map((t) => String(t))
+        .filter((t) => t in CAT_LABEL);
+      const topics = chosenTopics.join(",");
+
+      const token = genToken();
+      const result = await storage.addSubscriber(email, token, "CR", topics);
+      if (result === "already") {
+        return htmlPage(
+          statusPage({
+            title: "Ya suscrito",
+            heading: "Ya estás suscrito",
+            message: `${email} ya recibe el resumen de licitaciones. No hace falta hacer nada más.`,
+            base,
+            tone: "info",
+          })
+        );
+      }
+      await sendEmail(
+        { ...env, DIGEST_EMAIL_TO: email },
+        "Confirmá tu suscripción — Mesoamérica",
+        confirmEmailHtml(base, email, token)
+      );
+      const topicsNote = chosenTopics.length
+        ? ` Vas a recibir solo: ${chosenTopics.map((t) => CAT_LABEL[t]).join(", ")}.`
+        : " Vas a recibir todas las categorías.";
+      return htmlPage(
+        statusPage({
+          title: "Casi listo",
+          heading: "Revisá tu correo",
+          message: `Te enviamos un correo a ${email} para confirmar la suscripción. Hacé clic en el enlace y empezás a recibir las nuevas licitaciones.${topicsNote}`,
+          base,
+          tone: "ok",
+        })
+      );
+    }
+
+    if (url.pathname === "/confirm" && request.method === "GET") {
+      const email = normalizeEmail(url.searchParams.get("e") ?? "");
+      const token = url.searchParams.get("t") ?? "";
+      const ok = await storage.confirmSubscriber(email, token);
+      return htmlPage(
+        statusPage({
+          title: ok ? "Suscripción confirmada" : "Enlace inválido",
+          heading: ok ? "¡Suscripción confirmada!" : "Enlace inválido o vencido",
+          message: ok
+            ? `Listo. Vas a recibir en ${email} el resumen de nuevas licitaciones de Costa Rica.`
+            : "No pudimos confirmar la suscripción. Probá suscribirte de nuevo.",
+          base,
+          tone: ok ? "ok" : "error",
+        })
+      );
+    }
+
+    if (url.pathname === "/unsubscribe" && request.method === "GET") {
+      const email = normalizeEmail(url.searchParams.get("e") ?? "");
+      const token = url.searchParams.get("t") ?? "";
+      const ok = await storage.unsubscribe(email, token);
+      return htmlPage(
+        statusPage({
+          title: ok ? "Baja confirmada" : "Enlace inválido",
+          heading: ok ? "Te diste de baja" : "Enlace inválido",
+          message: ok
+            ? `${email} ya no recibirá más correos. Podés volver a suscribirte cuando quieras.`
+            : "No pudimos procesar la baja. Probá con el enlace más reciente.",
+          base,
+          tone: ok ? "ok" : "error",
+        })
+      );
+    }
+
     // --- HTML digest (ruta por defecto) ---
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const country = url.searchParams.get("country") ?? undefined;
@@ -217,8 +328,8 @@ async function enrichBacklog(env: Env, limit = 40): Promise<Record<string, unkno
 // ----- correo del digest (lo usan scheduled y /admin/email) -----
 
 async function sendDailyDigest(env: Env, force = false): Promise<Record<string, unknown>> {
-  if (!env.RESEND_API_KEY || !env.DIGEST_EMAIL_TO) {
-    return { sent: false, reason: "correo no configurado (falta RESEND_API_KEY o DIGEST_EMAIL_TO)" };
+  if (!env.RESEND_API_KEY) {
+    return { sent: false, reason: "correo no configurado (falta RESEND_API_KEY)" };
   }
   const storage = new Storage(env.DB);
   const lics = await storage.vigentes("CR");
@@ -232,13 +343,56 @@ async function sendDailyDigest(env: Env, force = false): Promise<Record<string, 
 
   const base = (env.PUBLIC_URL || "").replace(/\/$/, "");
   const asOf = new Date().toISOString().slice(0, 10);
-  const html = renderDigestEmail(newLics.length ? newLics : lics.slice(0, 40), lics.length, base, asOf);
+  const shown = newLics.length ? newLics : lics.slice(0, 40);
   const subject = newLics.length
     ? `${newLics.length} nuevas licitaciones — Mesoamérica CR (${asOf})`
     : `Licitaciones Mesoamérica CR (${asOf})`;
 
-  const result = await sendEmail(env, subject, html);
-  return { ...result, nuevas: newLics.length, vigentes: lics.length };
+  // 1) Correo al destinatario administrador (DIGEST_EMAIL_TO), si está configurado.
+  let adminResult: Record<string, unknown> = { sent: false, reason: "sin DIGEST_EMAIL_TO" };
+  if (env.DIGEST_EMAIL_TO) {
+    const html = renderDigestEmail(shown, lics.length, base, asOf);
+    adminResult = { ...(await sendEmail(env, subject, html)) };
+  }
+
+  // 2) Correo a los suscriptores confirmados, por lotes (cada uno con su
+  //    enlace de baja). Un subrequest por cada 100 suscriptores.
+  //    Cada suscriptor puede haber elegido temas (urbanismo/ambiental/obra
+  //    pública); si eligió alguno, su correo se filtra a solo esas
+  //    categorías. Sin temas elegidos (topics === "") recibe todo.
+  const subs = await storage.confirmedSubscribers();
+  let omitidosSinNuevas = 0;
+  const batch = subs
+    .map((s) => {
+      const subTopics = s.topics ? s.topics.split(",").filter(Boolean) : [];
+      const matches = (l: Licitacion) =>
+        subTopics.length === 0 || l.categories.some((c) => subTopics.includes(groupCat(c)));
+
+      const subLics = subTopics.length ? lics.filter(matches) : lics;
+      const subNewLics = subTopics.length ? newLics.filter(matches) : newLics;
+      if (subNewLics.length === 0 && !force) {
+        omitidosSinNuevas++;
+        return null;
+      }
+      const subShown = subNewLics.length ? subNewLics : subLics.slice(0, 40);
+      const subSubject = subNewLics.length
+        ? `${subNewLics.length} nuevas licitaciones — Mesoamérica CR (${asOf})`
+        : `Licitaciones Mesoamérica CR (${asOf})`;
+      return {
+        to: s.email,
+        subject: subSubject,
+        html: renderDigestEmail(subShown, subLics.length, base, asOf, unsubscribeUrl(base, s.email, s.token)),
+      };
+    })
+    .filter((b): b is { to: string; subject: string; html: string } => b !== null);
+  const batchResult = await sendBatch(env, batch);
+
+  return {
+    admin: adminResult,
+    suscriptores: { total: subs.length, enviados: batch.length, sinNuevasParaSusTemas: omitidosSinNuevas, ...batchResult },
+    nuevas: newLics.length,
+    vigentes: lics.length,
+  };
 }
 
 // ----- pipeline (lo usan scheduled y /admin/run) -----

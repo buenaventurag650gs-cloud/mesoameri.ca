@@ -170,6 +170,103 @@ export class Storage {
     return new Set(results.map((r) => r.dedupe_key));
   }
 
+  // ---- Suscriptores del correo (doble opt-in) ----
+
+  async ensureSubscribersTable(): Promise<void> {
+    await this.db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS subscribers (
+           email        TEXT PRIMARY KEY,
+           token        TEXT NOT NULL,
+           status       TEXT NOT NULL DEFAULT 'pending',
+           country      TEXT,
+           created_at   TEXT NOT NULL,
+           confirmed_at TEXT,
+           topics       TEXT NOT NULL DEFAULT ''
+         )`
+      )
+      .run();
+    // Migración: tablas creadas antes de agregar "topics" no la tienen.
+    // SQLite no soporta "ADD COLUMN IF NOT EXISTS", así que se intenta y se
+    // ignora el error si la columna ya existe.
+    try {
+      await this.db.prepare("ALTER TABLE subscribers ADD COLUMN topics TEXT NOT NULL DEFAULT ''").run();
+    } catch {
+      // ya existe — no hay nada que hacer
+    }
+  }
+
+  // Alta: si ya existe confirmado, no hace nada (evita reenviar confirmación).
+  // Si estaba pendiente o dado de baja, refresca token, temas y lo deja
+  // pendiente. `topics` es una lista separada por comas (ej. "urbanismo,ambiental")
+  // o "" para recibir todas las categorías.
+  async addSubscriber(
+    email: string,
+    token: string,
+    country: string | null,
+    topics = ""
+  ): Promise<"created" | "pending" | "already"> {
+    await this.ensureSubscribersTable();
+    const existing = await this.db
+      .prepare("SELECT status FROM subscribers WHERE email = ?")
+      .bind(email)
+      .first<{ status: string }>();
+    const now = new Date().toISOString();
+    if (existing) {
+      if (existing.status === "confirmed") return "already";
+      await this.db
+        .prepare(
+          "UPDATE subscribers SET token = ?, status = 'pending', country = ?, created_at = ?, topics = ? WHERE email = ?"
+        )
+        .bind(token, country, now, topics, email)
+        .run();
+      return "pending";
+    }
+    await this.db
+      .prepare(
+        "INSERT INTO subscribers (email, token, status, country, created_at, topics) VALUES (?,?,'pending',?,?,?)"
+      )
+      .bind(email, token, country, now, topics)
+      .run();
+    return "created";
+  }
+
+  async confirmSubscriber(email: string, token: string): Promise<boolean> {
+    await this.ensureSubscribersTable();
+    const row = await this.db
+      .prepare("SELECT token FROM subscribers WHERE email = ?")
+      .bind(email)
+      .first<{ token: string }>();
+    if (!row || row.token !== token) return false;
+    await this.db
+      .prepare("UPDATE subscribers SET status = 'confirmed', confirmed_at = ? WHERE email = ?")
+      .bind(new Date().toISOString(), email)
+      .run();
+    return true;
+  }
+
+  async unsubscribe(email: string, token: string): Promise<boolean> {
+    await this.ensureSubscribersTable();
+    const row = await this.db
+      .prepare("SELECT token FROM subscribers WHERE email = ?")
+      .bind(email)
+      .first<{ token: string }>();
+    if (!row || row.token !== token) return false;
+    await this.db
+      .prepare("UPDATE subscribers SET status = 'unsubscribed' WHERE email = ?")
+      .bind(email)
+      .run();
+    return true;
+  }
+
+  async confirmedSubscribers(): Promise<{ email: string; token: string; topics: string }[]> {
+    await this.ensureSubscribersTable();
+    const { results } = await this.db
+      .prepare("SELECT email, token, topics FROM subscribers WHERE status = 'confirmed' ORDER BY confirmed_at ASC")
+      .all<{ email: string; token: string; topics: string }>();
+    return results;
+  }
+
   async recordRun(source: string, startedAt: string, counts: UpsertCounts, error?: string): Promise<void> {
     await this.db
       .prepare(
