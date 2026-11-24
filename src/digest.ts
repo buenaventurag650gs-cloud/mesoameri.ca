@@ -65,6 +65,8 @@ const ICON_PATHS: Record<string, string> = {
   hash: '<path d="M5 9h14M5 15h14M11 4 9 20M15 4l-2 16"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
   download: '<path d="M12 3v12M7 11l5 5 5-5M5 21h14"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
 };
 function icon(name: string): string {
   const p = ICON_PATHS[name];
@@ -187,14 +189,25 @@ const STYLE = `
   .wrap, header.top, .section, .card { max-width: 100%; }
   img, svg { max-width: 100%; }
   header.top { padding: 28px 0 8px; }
-  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .sub { color: var(--muted); margin: 0; font-size: 14px; }
+  .brand { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 12px; }
+  .brand h1 { font-size: 25px; margin: 0; letter-spacing: -0.02em; font-weight: 800; color: var(--brand-ink); }
+  .brand .tag { margin: 0; font-size: 14.5px; color: var(--ink); font-weight: 500; }
+  .intro { margin: 8px 0 0; font-size: 13.5px; color: var(--muted); max-width: 760px; line-height: 1.5; }
+  .sub { color: var(--muted); margin: 8px 0 0; font-size: 13px; }
   .nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 8px; }
   .nav a { background: #fff; border: 1px solid var(--line); color: var(--brand-ink);
            padding: 6px 12px; border-radius: 999px; font-size: 13px; text-decoration: none; }
   .nav a:hover { border-color: var(--brand); color: var(--brand); }
+  /* Caja de suscripción: con ícono propio y acento para que no se confunda
+     con la barra de búsqueda/filtros de más abajo. */
   .subscribe { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-               background: #eef4fc; border: 1px solid #d7e6f7; border-radius: 12px; padding: 12px 16px; margin: 8px 0 4px; }
+               background: #eef4fc; border: 1px solid #d7e6f7; border-left: 4px solid var(--brand);
+               border-radius: 12px; padding: 12px 16px; margin: 20px 0 22px; }
+  .subscribe .sub-head { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .subscribe .sub-icon { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 999px;
+                          background: var(--brand); color: #fff; display: flex; align-items: center;
+                          justify-content: center; }
+  .subscribe .sub-icon .ico { width: 1em; height: 1em; }
   .subscribe .sub-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .subscribe .sub-txt strong { font-size: 14px; color: var(--brand-ink); }
   .subscribe .sub-txt span { font-size: 12.5px; color: var(--muted); }
@@ -259,12 +272,17 @@ const STYLE = `
                display: inline-flex; align-items: center; gap: 5px; }
   .btn-ghost:hover { background: #fff; border-color: var(--brand); color: var(--brand); }
   .empty { background:#fff; border:1px solid var(--line); border-radius:12px; padding:28px; text-align:center; color:var(--muted); }
-  /* Barra de filtros */
-  .filters { position: sticky; top: 0; z-index: 5; background: var(--bg);
-             padding: 12px 0 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  /* Barra de búsqueda y filtros: ícono de lupa propio y fondo blanco en
+     bloque (a diferencia de la caja de suscripción, de arriba, que es azul
+     con ícono de sobre) para que se lean como dos cosas distintas. */
+  .filters { position: sticky; top: 0; z-index: 5; background: #fff;
+             border: 1px solid var(--line); border-radius: 12px;
+             padding: 12px 14px 10px; margin-bottom: 4px; }
   .filters .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .filters input[type=search] { flex: 1; min-width: 180px; border: 1px solid var(--line);
-             border-radius: 999px; padding: 8px 14px; font-size: 14px; background: #fff; color: var(--ink); }
+  .search-wrap { position: relative; display: flex; align-items: center; flex: 1; min-width: 180px; }
+  .search-wrap .ico { position: absolute; left: 13px; color: var(--muted); pointer-events: none; }
+  .filters input[type=search] { width: 100%; border: 1px solid var(--line);
+             border-radius: 999px; padding: 8px 14px 8px 34px; font-size: 14px; background: var(--bg); color: var(--ink); }
   .filters select { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; background: #fff; color: var(--ink); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
   .chip { background: #fff; border: 1px solid var(--line); color: var(--chip-ink); cursor: pointer;
@@ -297,15 +315,15 @@ const STYLE = `
                padding:28px; text-align:center; color:var(--muted); margin-top:12px; }
   @media (max-width: 560px) {
     body { padding: 0 10px 40px; font-size: 14.5px; }
-    h1 { font-size: 19px; }
+    .brand h1 { font-size: 20px; }
     .grid { grid-template-columns: 1fr; gap: 12px; }
     .card { padding: 14px 13px 12px; }
     .facts { grid-template-columns: 1fr; gap: 8px; }
     .title { font-size: 15.5px; }
     .monto { font-size: 18px; }
-    .filters { padding: 10px 0 8px; }
+    .filters { padding: 10px 12px 8px; }
     .filters .row { flex-direction: column; align-items: stretch; }
-    .filters input[type=search], .filters select { width: 100%; min-width: 0; }
+    .search-wrap, .filters select { width: 100%; min-width: 0; }
     .selects { flex-direction: column; }
     .selects select { width: 100%; min-width: 0; }
     .foot { gap: 8px; }
@@ -526,6 +544,13 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     .map(([c, items]) => `${COUNTRIES[c] ?? c} ${items.length}`)
     .join(" · ");
 
+  // Para el encabezado: si la vista está filtrada a un solo país, el
+  // subtítulo lo nombra; si no, describe la región completa.
+  const singleCountry = byCountry.size === 1 ? [...byCountry.keys()][0] : null;
+  const heroTag = singleCountry
+    ? `Licitaciones públicas vigentes en ${COUNTRIES[singleCountry] ?? singleCountry}`
+    : "Licitaciones públicas vigentes en Centroamérica, Panamá y República Dominicana";
+
   const weekKeys = opts.weekKeys ?? new Set<string>();
   const nuevas = lics.filter((l) => newKeys.has(dedupeKey(l))).length;
   const esta_semana = lics.filter((l) => weekKeys.has(dedupeKey(l))).length;
@@ -628,7 +653,9 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
   const filters = sections.length
     ? `<div class="filters">
          <div class="row">
-           <input type="search" id="q" placeholder="Buscar por título, institución o número…" autocomplete="off">
+           <div class="search-wrap">${icon("search")}
+             <input type="search" id="q" placeholder="Buscar por título, institución o número…" autocomplete="off">
+           </div>
            <select id="sort">
              <option value="cierre">Orden: cierre más próximo</option>
              <option value="nuevos">Orden: más nuevos</option>
@@ -660,7 +687,7 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
     .join("\n         ");
 
   // El CSV y el JSON respetan el país actual (si la vista está filtrada).
-  const curCountry = countriesWithData.length === 1 ? countriesWithData[0] : "";
+  const curCountry = singleCountry ?? "";
   const dlQ = curCountry ? `?country=${esc(curCountry)}` : "";
   const nav = opts.showNav
     ? `<nav class="nav">
@@ -682,9 +709,12 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
 
   const subscribeBox = opts.showNav
     ? `<form class="subscribe" method="post" action="/subscribe">
-         <div class="sub-txt">
-           <strong>Recibí las nuevas licitaciones por correo</strong>
-           <span>Un resumen cuando aparezcan concursos nuevos. Te podés dar de baja cuando querás.</span>
+         <div class="sub-head">
+           <span class="sub-icon">${icon("mail")}</span>
+           <div class="sub-txt">
+             <strong>Recibí las nuevas licitaciones por correo</strong>
+             <span>Un resumen cuando aparezcan concursos nuevos. Te podés dar de baja cuando querás.</span>
+           </div>
          </div>
          <div class="sub-row">
            <input type="email" name="email" required placeholder="tu@correo.com" aria-label="Tu correo electrónico">
@@ -697,12 +727,25 @@ export function renderDigest(lics: Licitacion[], opts: DigestOptions = {}): stri
        </form>`
     : "";
 
+  const metaDesc =
+    "Rastreador diario de licitaciones públicas abiertas en Centroamérica, Panamá y República " +
+    "Dominicana — obra pública, salud, educación, ambiente, tecnología y más — tomadas directo de " +
+    "SICOP, PanamaCompra, BID, PNUD y Banco Mundial.";
+
   return `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="${esc(metaDesc)}">
 <title>${esc(title)}</title>${STYLE}</head>
 <body><div class="wrap">
 <header class="top">
-  <h1>${esc(title)}</h1>
+  <div class="brand">
+    <h1>mesoameri.ca</h1>
+    <p class="tag">${esc(heroTag)}</p>
+  </div>
+  <p class="intro">Rastreamos todos los días las licitaciones abiertas en la región — obra pública,
+    salud, educación, ambiente, tecnología y más — directo desde las fuentes oficiales (SICOP,
+    PanamaCompra, BID, PNUD, Banco Mundial). Elegí un tema o un país abajo, o suscribite para
+    recibir las nuevas por correo.</p>
   <p class="sub">${asOf} · ${lics.length} vigentes${nuevas ? ` · ${nuevas} nuevas` : ""} · ${esc(totals)}</p>
 </header>
 ${nav}

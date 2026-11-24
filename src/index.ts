@@ -15,7 +15,7 @@ import { CAT_LABEL, groupCat, renderDigest } from "./digest";
 import { renderDigestEmail, sendBatch, sendEmail } from "./email";
 import { FETCHERS } from "./fetchers";
 import { enrichSicopCr } from "./fetchers/sicop_cr";
-import { dedupeKey, type Licitacion } from "./schema";
+import { COUNTRIES, dedupeKey, type Licitacion } from "./schema";
 import { Storage } from "./storage";
 import {
   confirmEmailHtml,
@@ -251,8 +251,8 @@ export default {
         weekKeys,
         showNav: true,
         title: country
-          ? `Licitaciones — ${country}`
-          : "Licitaciones Mesoamérica",
+          ? `mesoameri.ca — Licitaciones en ${COUNTRIES[country] ?? country}`
+          : "mesoameri.ca — Licitaciones públicas de Mesoamérica",
       });
       return new Response(html, {
         headers: { "Content-Type": "text/html; charset=utf-8" },
