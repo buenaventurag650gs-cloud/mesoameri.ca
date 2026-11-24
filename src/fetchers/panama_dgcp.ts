@@ -22,7 +22,7 @@
 // directo a la ficha pública, igual que hacemos con el PDF de SICOP.
 
 import { makeLicitacion, type Licitacion, type Status } from "../schema";
-import { type FetcherEnv } from "./base";
+import { sleep, type FetcherEnv } from "./base";
 
 const API_URL = "https://apisv3.panamacompra.gob.pa/busqueda/proceso-lista-publico";
 const PORTAL_ORIGIN = "https://www.panamacompra.gob.pa";
@@ -31,6 +31,11 @@ const WINDOW_DAYS = 60; // igual que SICOP: ventana de publicación amplia
 const PAGE_SIZE = 500; // margen generoso (el volumen real en 60 días ronda ~250)
 const ID_ESTADO_VIGENTE = 36; // "Vigente" — el único estado activo real en V3
 const REQ_TIMEOUT_MS = 20_000;
+// Es una sola llamada por corrida (a diferencia de SICOP, que hace ~39 y
+// tolera que algunas fallen): si esta falla, el día queda en cero. Un
+// reintento cubre los tropiezos puntuales del servidor (ej. HTTP 520).
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 2_000;
 
 interface ApiRegistro {
   idProcesosContratacion?: number;
@@ -76,7 +81,7 @@ export async function fetchPanamaDgcp(env: FetcherEnv): Promise<Licitacion[]> {
     },
   };
 
-  const data = await postJson<ApiResponse>(API_URL, body, env);
+  const data = await postJsonWithRetry<ApiResponse>(API_URL, body, env);
   const registros = data.result?.registros ?? [];
 
   // Aviso suave si algún día el volumen supera la página pedida (no debería
@@ -181,7 +186,7 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-// ---- POST JSON con timeout ----
+// ---- POST JSON con timeout + reintentos ----
 async function postJson<T>(url: string, body: unknown, env: FetcherEnv): Promise<T> {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), REQ_TIMEOUT_MS);
@@ -201,4 +206,18 @@ async function postJson<T>(url: string, body: unknown, env: FetcherEnv): Promise
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function postJsonWithRetry<T>(url: string, body: unknown, env: FetcherEnv): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await postJson<T>(url, body, env);
+    } catch (e) {
+      lastError = e;
+      console.warn(`panama_dgcp intento ${attempt}/${MAX_ATTEMPTS} falló: ${(e as Error).message}`);
+      if (attempt < MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS);
+    }
+  }
+  throw lastError;
 }
